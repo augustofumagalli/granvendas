@@ -142,6 +142,21 @@ alter table importacoes_preco enable row level security;
 create policy "perfil_proprio" on perfis for all using (auth.uid() = id) with check (auth.uid() = id);
 create policy "config_propria" on configuracoes for all using (auth.uid() = perfil_id) with check (auth.uid() = perfil_id);
 
+-- Gestor pode LISTAR todos os perfis (tela Equipe). SECURITY DEFINER evita recursão de RLS.
+create or replace function public.is_gestor()
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.perfis
+    where id = auth.uid() and papel = 'gestor'
+  );
+$$;
+create policy "perfil_gestor_le_todos" on perfis for select using (public.is_gestor());
+
 -- Produtos e clientes: todos autenticados leem e escrevem (base compartilhada da empresa)
 create policy "produtos_auth" on produtos for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 create policy "clientes_auth" on clientes for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
