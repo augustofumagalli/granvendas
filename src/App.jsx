@@ -9,6 +9,7 @@ import Orcamentos from './pages/Orcamentos'
 import Visitas from './pages/Visitas'
 import Relatorios from './pages/Relatorios'
 import Configuracoes from './pages/Configuracoes'
+import Equipe from './pages/Equipe'
 
 function Protegida({ children }) {
   const { session, carregando } = useAuth()
@@ -29,6 +30,7 @@ export default function App() {
       <Route path="/visitas" element={<Protegida><Visitas /></Protegida>} />
       <Route path="/relatorios" element={<Protegida><Relatorios /></Protegida>} />
       <Route path="/configuracoes" element={<Protegida><Configuracoes /></Protegida>} />
+      <Route path="/equipe" element={<Protegida><Equipe /></Protegida>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

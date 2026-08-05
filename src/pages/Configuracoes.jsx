@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { soDigitos, formataTelefone } from '../lib/format'
 
 export default function Configuracoes() {
-  const { user, logout } = useAuth()
+  const { user, perfil, logout } = useAuth()
   const toast = useToast()
+  const navigate = useNavigate()
 
   const [loading, setLoading] = useState(true)
   const [nome, setNome] = useState('')
@@ -87,6 +89,18 @@ export default function Configuracoes() {
   return (
     <div>
       <div className="section-title mb">Configurações</div>
+
+      {perfil?.papel === 'gestor' && (
+        <div className="card mb">
+          <div className="section-title">Gestão</div>
+          <div className="list-item" onClick={() => navigate('/equipe')}>
+            <div className="grow">
+              <div className="title">Equipe</div>
+              <div className="sub">Cadastrar e ver vendedores</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="card mb">
         <div className="section-title">Perfil</div>
