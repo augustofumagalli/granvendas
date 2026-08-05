@@ -93,11 +93,10 @@ export default function Configuracoes() {
       {perfil?.papel === 'gestor' && (
         <div className="card mb">
           <div className="section-title">Gestão</div>
-          <div className="list-item" onClick={() => navigate('/equipe')}>
-            <div className="grow">
-              <div className="title">Equipe</div>
-              <div className="sub">Cadastrar e ver vendedores</div>
-            </div>
+          <div className="row mt">
+            <button className="btn btn-azul grow" onClick={() => navigate('/equipe')}>
+              + Cadastrar vendedor
+            </button>
           </div>
         </div>
       )}
