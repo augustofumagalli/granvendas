@@ -19,12 +19,12 @@ export default function Produtos() {
   const [busca, setBusca] = useState('')
 
   const [sel, setSel] = useState(null) // produto em edição
-  const [editForm, setEditForm] = useState({ preco: '', estoque: '' })
+  const [editForm, setEditForm] = useState({ preco_vista: '', preco_prazo: '', margem: '', estoque: '' })
   const [salvando, setSalvando] = useState(false)
 
   const [showImport, setShowImport] = useState(false)
   const [showNovo, setShowNovo] = useState(false)
-  const [novo, setNovo] = useState({ codigo: '', descricao: '', unidade: '', preco: '', estoque: '' })
+  const [novo, setNovo] = useState({ codigo: '', descricao: '', unidade: '', preco_vista: '', preco_prazo: '', margem: '', estoque: '' })
 
   async function carregar() {
     setCarregando(true)
@@ -48,16 +48,27 @@ export default function Produtos() {
 
   function abrirEdicao(p) {
     setSel(p)
-    setEditForm({ preco: p.preco ?? '', estoque: p.estoque ?? '' })
+    setEditForm({
+      preco_vista: p.preco_vista ?? p.preco ?? '',
+      preco_prazo: p.preco_prazo ?? '',
+      margem: p.margem ?? '',
+      estoque: p.estoque ?? '',
+    })
   }
 
   async function salvarEdicao() {
     if (!sel) return
     setSalvando(true)
+    const vista = editForm.preco_vista === '' ? null : Number(editForm.preco_vista)
+    const prazo = editForm.preco_prazo === '' ? null : Number(editForm.preco_prazo)
     const { error } = await supabase
       .from('produtos')
       .update({
-        preco: Number(editForm.preco) || 0,
+        // preço principal (usado nos orçamentos) segue o à vista
+        preco: vista ?? prazo ?? 0,
+        preco_vista: vista,
+        preco_prazo: prazo,
+        margem: editForm.margem === '' ? null : Number(editForm.margem),
         estoque: Number(editForm.estoque) || 0,
         atualizado_em: new Date().toISOString(),
       })
@@ -78,11 +89,16 @@ export default function Produtos() {
       return
     }
     setSalvando(true)
+    const vista = novo.preco_vista === '' ? null : Number(novo.preco_vista)
+    const prazo = novo.preco_prazo === '' ? null : Number(novo.preco_prazo)
     const { error } = await supabase.from('produtos').insert({
       codigo: novo.codigo.trim(),
       descricao: novo.descricao.trim(),
       unidade: novo.unidade.trim() || null,
-      preco: Number(novo.preco) || 0,
+      preco: vista ?? prazo ?? 0,
+      preco_vista: vista,
+      preco_prazo: prazo,
+      margem: novo.margem === '' ? null : Number(novo.margem),
       estoque: Number(novo.estoque) || 0,
       atualizado_em: new Date().toISOString(),
     })
@@ -93,7 +109,7 @@ export default function Produtos() {
     }
     toast('Produto criado')
     setShowNovo(false)
-    setNovo({ codigo: '', descricao: '', unidade: '', preco: '', estoque: '' })
+    setNovo({ codigo: '', descricao: '', unidade: '', preco_vista: '', preco_prazo: '', margem: '', estoque: '' })
     carregar()
   }
 
@@ -136,10 +152,18 @@ export default function Produtos() {
                 <div className="title">{p.descricao}</div>
                 <div className="sub">
                   Cód: {p.codigo} · Estoque: {numero(p.estoque)} {p.unidade || ''}
+                  {p.margem != null ? ` · MG ${numero(p.margem, 1)}%` : ''}
                 </div>
               </div>
-              <div className="mono" style={{ color: '#173D5C', fontWeight: 700 }}>
-                {brl(p.preco)}
+              <div style={{ textAlign: 'right' }}>
+                <div className="mono" style={{ color: '#173D5C', fontWeight: 700 }}>
+                  {brl(p.preco_vista ?? p.preco)}
+                </div>
+                {p.preco_prazo != null && (
+                  <div className="mono muted" style={{ fontSize: 12 }}>
+                    {brl(p.preco_prazo)} a prazo
+                  </div>
+                )}
               </div>
             </div>
           ))
@@ -151,12 +175,32 @@ export default function Produtos() {
           <p className="muted mb">Cód: {sel.codigo}</p>
           <div className="row">
             <div className="field">
-              <label>Preço (R$)</label>
+              <label>Preço à vista (R$)</label>
               <input
                 type="number"
                 step="0.01"
-                value={editForm.preco}
-                onChange={(e) => setEditForm({ ...editForm, preco: e.target.value })}
+                value={editForm.preco_vista}
+                onChange={(e) => setEditForm({ ...editForm, preco_vista: e.target.value })}
+              />
+            </div>
+            <div className="field">
+              <label>Preço a prazo (R$)</label>
+              <input
+                type="number"
+                step="0.01"
+                value={editForm.preco_prazo}
+                onChange={(e) => setEditForm({ ...editForm, preco_prazo: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="row">
+            <div className="field">
+              <label>Margem (MG %)</label>
+              <input
+                type="number"
+                step="0.01"
+                value={editForm.margem}
+                onChange={(e) => setEditForm({ ...editForm, margem: e.target.value })}
               />
             </div>
             <div className="field">
@@ -196,8 +240,18 @@ export default function Produtos() {
               <input placeholder="UN, PC, M..." value={novo.unidade} onChange={(e) => setNovo({ ...novo, unidade: e.target.value })} />
             </div>
             <div className="field">
-              <label>Preço (R$)</label>
-              <input type="number" step="0.01" value={novo.preco} onChange={(e) => setNovo({ ...novo, preco: e.target.value })} />
+              <label>Preço à vista (R$)</label>
+              <input type="number" step="0.01" value={novo.preco_vista} onChange={(e) => setNovo({ ...novo, preco_vista: e.target.value })} />
+            </div>
+            <div className="field">
+              <label>Preço a prazo (R$)</label>
+              <input type="number" step="0.01" value={novo.preco_prazo} onChange={(e) => setNovo({ ...novo, preco_prazo: e.target.value })} />
+            </div>
+          </div>
+          <div className="row">
+            <div className="field">
+              <label>Margem (MG %)</label>
+              <input type="number" step="0.01" value={novo.margem} onChange={(e) => setNovo({ ...novo, margem: e.target.value })} />
             </div>
             <div className="field">
               <label>Estoque</label>
