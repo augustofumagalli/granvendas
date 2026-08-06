@@ -382,17 +382,6 @@ function ModalDetalhe({ orcamento, vendedor, toast, onClose, onMudou }) {
     return gerarPdfOrcamento({ ...orcamento, status }, itens, cliente, vendedor)
   }
 
-  async function baixarPdf() {
-    setOcupado(true)
-    try {
-      const pdf = await gerar()
-      pdf.baixar()
-    } catch {
-      toast('Erro ao gerar PDF')
-    }
-    setOcupado(false)
-  }
-
   async function marcarStatus(novo, campoData) {
     const patch = { status: novo }
     if (campoData) patch[campoData] = new Date().toISOString()
@@ -409,7 +398,6 @@ function ModalDetalhe({ orcamento, vendedor, toast, onClose, onMudou }) {
     setOcupado(true)
     try {
       const pdf = await gerar()
-      pdf.baixar() // salva pra poder anexar manualmente
 
       const resumoItens = itens
         .map((it) => `- ${it.descricao} (${numero(it.quantidade)}x ${brl(it.preco_unit)})`)
@@ -420,12 +408,30 @@ function ModalDetalhe({ orcamento, vendedor, toast, onClose, onMudou }) {
         (orcamento.condicao_pagamento ? `Condição de pagamento: ${orcamento.condicao_pagamento}\n` : '') +
         `Válido por ${orcamento.validade_dias ?? 7} dias.`
 
-      const tel = soDigitos(cliente?.telefone)
-      const url = tel
-        ? `https://wa.me/55${tel}?text=${encodeURIComponent(texto)}`
-        : `https://wa.me/?text=${encodeURIComponent(texto)}`
-      window.open(url, '_blank')
+      // Preferência: compartilhamento nativo (anexa o PDF direto no WhatsApp)
+      const arquivo = new File([pdf.blob], pdf.nomeArquivo, { type: 'application/pdf' })
+      let enviado = false
+      if (navigator.canShare && navigator.canShare({ files: [arquivo] })) {
+        try {
+          await navigator.share({ files: [arquivo], text: texto })
+          enviado = true
+        } catch (e) {
+          if (e?.name === 'AbortError') { setOcupado(false); return } // usuário cancelou
+          // outro erro -> cai no fallback abaixo
+        }
+      }
 
+      // Fallback (desktop ou sem share): baixa o PDF e abre o WhatsApp com o texto
+      if (!enviado) {
+        pdf.baixar()
+        const tel = soDigitos(cliente?.telefone)
+        const url = tel
+          ? `https://wa.me/55${tel}?text=${encodeURIComponent(texto)}`
+          : `https://wa.me/?text=${encodeURIComponent(texto)}`
+        window.open(url, '_blank')
+      }
+
+      // Marca como enviado por último — a página ainda está viva aqui, então o status é gravado.
       if (status !== 'enviado' && status !== 'fechado') {
         await marcarStatus('enviado', 'enviado_em')
       }
@@ -472,12 +478,9 @@ function ModalDetalhe({ orcamento, vendedor, toast, onClose, onMudou }) {
             </div>
           )}
 
-          <div className="row mb" style={{ flexWrap: 'wrap' }}>
-            <button className="btn btn-outline grow" onClick={baixarPdf} disabled={ocupado}>
-              📄 Baixar PDF
-            </button>
+          <div className="row mb">
             <button className="btn btn-verde grow" onClick={enviarWhatsapp} disabled={ocupado}>
-              🟢 Enviar por WhatsApp
+              {ocupado ? <span className="spin" /> : '🟢 Enviar por WhatsApp'}
             </button>
           </div>
 
