@@ -30,6 +30,7 @@ export default function Orcamentos() {
 
   const [clientes, setClientes] = useState([])
   const [produtos, setProdutos] = useState([])
+  const [condicoes, setCondicoes] = useState([])
 
   const [modalNovo, setModalNovo] = useState(false)
   const [detalhe, setDetalhe] = useState(null)
@@ -52,12 +53,14 @@ export default function Orcamentos() {
   }, [user])
 
   async function carregarAuxiliares() {
-    const [rCli, rProd] = await Promise.all([
+    const [rCli, rProd, rCond] = await Promise.all([
       supabase.from('clientes').select('*').order('razao_social', { ascending: true }),
       supabase.from('produtos').select('*').eq('ativo', true).order('descricao', { ascending: true }),
+      supabase.from('condicoes_pagamento').select('*').eq('ativo', true).order('criado_em', { ascending: true }),
     ])
     setClientes(rCli.data || [])
     setProdutos(rProd.data || [])
+    setCondicoes(rCond.data || [])
   }
 
   function abrirNovo() {
@@ -119,6 +122,7 @@ export default function Orcamentos() {
           user={user}
           clientes={clientes}
           produtos={produtos}
+          condicoes={condicoes}
           toast={toast}
           onClose={() => setModalNovo(false)}
           onSalvo={() => { setModalNovo(false); carregar() }}
@@ -138,11 +142,12 @@ export default function Orcamentos() {
   )
 }
 
-function ModalNovo({ user, clientes, produtos, toast, onClose, onSalvo }) {
+function ModalNovo({ user, clientes, produtos, condicoes, toast, onClose, onSalvo }) {
   const [clienteId, setClienteId] = useState('')
   const [itens, setItens] = useState([])
   const [observacao, setObservacao] = useState('')
   const [validadeDias, setValidadeDias] = useState(7)
+  const [condicaoPagamento, setCondicaoPagamento] = useState('')
   const [salvando, setSalvando] = useState(false)
 
   // form de item
@@ -202,6 +207,7 @@ function ModalNovo({ user, clientes, produtos, toast, onClose, onSalvo }) {
         cliente_nome: clienteNome,
         observacao,
         validade_dias: Number(validadeDias) || 7,
+        condicao_pagamento: condicaoPagamento || null,
       })
       .select()
       .single()
@@ -320,6 +326,19 @@ function ModalNovo({ user, clientes, produtos, toast, onClose, onSalvo }) {
         />
       </div>
 
+      <div className="field">
+        <label>Condição de pagamento</label>
+        <select value={condicaoPagamento} onChange={(e) => setCondicaoPagamento(e.target.value)}>
+          <option value="">— nenhuma —</option>
+          {condicoes.map((c) => (
+            <option key={c.id} value={c.nome}>{c.nome}</option>
+          ))}
+        </select>
+        {condicoes.length === 0 && (
+          <div className="muted mt">Cadastre condições em Configurações.</div>
+        )}
+      </div>
+
       <div className="row mt">
         <button className="btn btn-azul grow" onClick={salvar} disabled={salvando}>
           {salvando ? 'Salvando…' : 'Salvar orçamento'}
@@ -398,6 +417,7 @@ function ModalDetalhe({ orcamento, vendedor, toast, onClose, onMudou }) {
       const texto =
         `Olá ${orcamento.cliente_nome || 'cliente'}, segue orçamento Nº${orcamento.numero} ` +
         `no valor de ${brl(total)}.\n\nItens:\n${resumoItens}\n\n` +
+        (orcamento.condicao_pagamento ? `Condição de pagamento: ${orcamento.condicao_pagamento}\n` : '') +
         `Válido por ${orcamento.validade_dias ?? 7} dias.`
 
       const tel = soDigitos(cliente?.telefone)
@@ -444,6 +464,13 @@ function ModalDetalhe({ orcamento, vendedor, toast, onClose, onMudou }) {
             <span className="muted">Total</span>
             <span className="mono">{brl(total)}</span>
           </div>
+
+          {orcamento.condicao_pagamento && (
+            <div className="between mb">
+              <span className="muted">Condição de pagamento</span>
+              <span>{orcamento.condicao_pagamento}</span>
+            </div>
+          )}
 
           <div className="row mb" style={{ flexWrap: 'wrap' }}>
             <button className="btn btn-outline grow" onClick={baixarPdf} disabled={ocupado}>

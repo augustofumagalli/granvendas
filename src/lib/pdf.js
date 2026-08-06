@@ -120,6 +120,15 @@ export async function gerarPdfOrcamento(orcamento, itens, cliente, vendedor) {
   doc.setTextColor(AZUL)
   doc.text(`TOTAL: ${brl(totalGeral)}`, largura - margem, yPos, { align: 'right' })
 
+  // Condição de pagamento (se houver)
+  if (orcamento?.condicao_pagamento) {
+    yPos += 8
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(10)
+    doc.setTextColor(AZUL)
+    doc.text(`Condição de pagamento: ${orcamento.condicao_pagamento}`, largura - margem, yPos, { align: 'right' })
+  }
+
   // Validade
   yPos += 8
   doc.setFont('helvetica', 'normal')

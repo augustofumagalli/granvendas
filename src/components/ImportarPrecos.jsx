@@ -5,7 +5,7 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
-import { brl } from '../lib/format'
+import { brl, numero } from '../lib/format'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
 
@@ -17,33 +17,81 @@ const norm = (s) =>
     .replace(/[\u0300-\u036f]/g, '')
     .trim()
 
-// candidatos por tipo de coluna (já sem acento)
-const CAND = {
-  codigo: ['codigo', 'cod', 'sku', 'referencia', 'ref'],
-  descricao: ['descricao', 'produto', 'item', 'nome'],
-  preco: ['preco venda', 'valor unitario', 'preco unitario', 'preco', 'valor'],
+// Campos que a planilha pode ter (em qualquer ordem)
+const CAMPOS = ['codigo', 'descricao', 'preco_vista', 'preco_prazo', 'margem_vista', 'margem_prazo', 'estoque']
+
+const ROTULO = {
+  codigo: 'Código',
+  descricao: 'Descrição',
+  preco_vista: 'Preço à vista',
+  preco_prazo: 'Preço a prazo',
+  margem_vista: 'Margem à vista (MG %)',
+  margem_prazo: 'Margem a prazo (MG %)',
+  estoque: 'Estoque',
 }
 
-// converte preço BR (ou número) -> Number
-function parsePreco(v) {
+// candidatos por tipo de coluna (já sem acento). Mais específico primeiro.
+// As margens (MG %) são detectadas à parte, por proximidade dos preços.
+const CAND = {
+  codigo: ['codigo', 'cod', 'sku', 'referencia', 'ref'],
+  descricao: ['descricao', 'discriminacao', 'produto', 'item', 'nome'],
+  preco_vista: ['a vista', 'avista', 'preco a vista', 'vista', 'preco venda', 'preco', 'valor'],
+  preco_prazo: ['a prazo', 'aprazo', 'preco a prazo', 'prazo'],
+  estoque: ['estoque', 'saldo', 'quantidade', 'qtd', 'disponivel'],
+}
+const CAND_MARGEM = ['margem', 'markup', 'mg %', 'mg%', 'mg']
+const CAMPOS_SIMPLES = ['codigo', 'descricao', 'preco_vista', 'preco_prazo', 'estoque']
+
+const idxVazio = () => CAMPOS.reduce((o, k) => ((o[k] = -1), o), {})
+
+// converte número BR (ou number) -> Number. Remove R$, % e separadores.
+function parseNum(v) {
   if (v == null || v === '') return NaN
   if (typeof v === 'number') return v
-  let s = String(v).trim().replace(/r\$/i, '').replace(/\s/g, '')
+  let s = String(v).trim().replace(/r\$/i, '').replace(/%/g, '').replace(/\s/g, '')
   if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.')
   return parseFloat(s)
 }
 
 function detectarColunas(cab) {
-  const idx = { codigo: -1, descricao: -1, preco: -1 }
+  const idx = idxVazio()
+  const margens = [] // índices de todas as colunas "MG %"
   cab.forEach((c, i) => {
     const n = norm(c)
     if (!n) return
-    for (const key of Object.keys(CAND)) {
-      if (idx[key] === -1 && CAND[key].some((t) => n === t || n.includes(t))) idx[key] = i
+    if (CAND_MARGEM.some((t) => n === t || n.includes(t))) { margens.push(i); return }
+    for (const key of CAMPOS_SIMPLES) {
+      if (idx[key] === -1 && CAND[key].some((t) => n === t || n.includes(t))) { idx[key] = i; break }
     }
   })
+
+  // associa cada margem ao preço mais próximo (prioriza a que vem logo à direita do preço)
+  const livres = [...margens]
+  const atribuir = (precoKey, margemKey) => {
+    if (idx[precoKey] < 0 || !livres.length) return
+    let best = -1
+    let bestScore = Infinity
+    livres.forEach((mi) => {
+      const dist = mi - idx[precoKey]
+      const score = dist > 0 ? dist : Math.abs(dist) + 0.5 // prefere logo após o preço
+      if (score < bestScore) { bestScore = score; best = mi }
+    })
+    if (best >= 0) {
+      idx[margemKey] = best
+      livres.splice(livres.indexOf(best), 1)
+    }
+  }
+  atribuir('preco_prazo', 'margem_prazo')
+  atribuir('preco_vista', 'margem_vista')
+  // margem que sobrou sem par -> preenche o slot vazio, se houver
+  if (livres.length && idx.margem_vista < 0) idx.margem_vista = livres.shift()
+  if (livres.length && idx.margem_prazo < 0) idx.margem_prazo = livres.shift()
+
   return idx
 }
+
+// reconhece o cabeçalho se achou código e ao menos um preço
+const reconheceu = (idx) => idx.codigo >= 0 && (idx.preco_vista >= 0 || idx.preco_prazo >= 0)
 
 function montarLinhas(matriz, idx) {
   const out = []
@@ -51,10 +99,24 @@ function montarLinhas(matriz, idx) {
     const row = matriz[r]
     if (!row) continue
     const codigo = idx.codigo >= 0 ? String(row[idx.codigo] ?? '').trim() : ''
-    const descricao = idx.descricao >= 0 ? String(row[idx.descricao] ?? '').trim() : ''
-    const preco = idx.preco >= 0 ? parsePreco(row[idx.preco]) : NaN
     if (!codigo) continue
-    out.push({ codigo, descricao, preco: isNaN(preco) ? 0 : preco })
+    const descricao = idx.descricao >= 0 ? String(row[idx.descricao] ?? '').trim() : ''
+    const pv = idx.preco_vista >= 0 ? parseNum(row[idx.preco_vista]) : NaN
+    const pp = idx.preco_prazo >= 0 ? parseNum(row[idx.preco_prazo]) : NaN
+    const mv = idx.margem_vista >= 0 ? parseNum(row[idx.margem_vista]) : NaN
+    const mp = idx.margem_prazo >= 0 ? parseNum(row[idx.margem_prazo]) : NaN
+    const est = idx.estoque >= 0 ? parseNum(row[idx.estoque]) : NaN
+    const preco = !isNaN(pv) ? pv : !isNaN(pp) ? pp : 0
+    out.push({
+      codigo,
+      descricao,
+      preco,
+      preco_vista: isNaN(pv) ? null : pv,
+      preco_prazo: isNaN(pp) ? null : pp,
+      margem_vista: isNaN(mv) ? null : mv,
+      margem_prazo: isNaN(mp) ? null : mp,
+      estoque: isNaN(est) ? null : est,
+    })
   }
   return out
 }
@@ -67,18 +129,18 @@ export default function ImportarPrecos({ onClose, onConcluido }) {
   const [carregando, setCarregando] = useState(false)
   const [salvando, setSalvando] = useState(false)
 
-  const [matriz, setMatriz] = useState(null) // guardada quando precisa mapear manualmente
+  const [matriz, setMatriz] = useState(null) // guardada p/ remapear
   const [cabecalho, setCabecalho] = useState([])
-  const [mapCol, setMapCol] = useState({ codigo: -1, descricao: -1, preco: -1 })
+  const [mapCol, setMapCol] = useState(idxVazio())
   const [precisaMapear, setPrecisaMapear] = useState(false)
 
   const [linhas, setLinhas] = useState([])
-  const [mapaProdutos, setMapaProdutos] = useState({}) // codigo -> { preco, descricao }
+  const [mapaProdutos, setMapaProdutos] = useState({}) // codigo -> produto existente
 
   useEffect(() => {
     supabase
       .from('produtos')
-      .select('codigo,preco,descricao')
+      .select('codigo,preco,descricao,preco_vista,preco_prazo,margem_vista,margem_prazo,estoque')
       .then(({ data }) => {
         const m = {}
         ;(data || []).forEach((p) => {
@@ -91,7 +153,7 @@ export default function ImportarPrecos({ onClose, onConcluido }) {
   function resetar() {
     setMatriz(null)
     setCabecalho([])
-    setMapCol({ codigo: -1, descricao: -1, preco: -1 })
+    setMapCol(idxVazio())
     setPrecisaMapear(false)
     setLinhas([])
   }
@@ -107,15 +169,14 @@ export default function ImportarPrecos({ onClose, onConcluido }) {
     const idx = detectarColunas(cab)
     setCabecalho(cab)
     setMatriz(mat)
-    if (idx.codigo >= 0 && idx.preco >= 0) {
+    setMapCol(idx)
+    if (reconheceu(idx)) {
       const ls = montarLinhas(mat, idx)
-      if (!ls.length) throw new Error('Colunas encontradas, mas nenhuma linha válida.')
-      setMapCol(idx)
+      if (!ls.length) throw new Error('Colunas reconhecidas, mas nenhuma linha válida.')
       setLinhas(ls)
       setPrecisaMapear(false)
     } else {
-      // não reconheceu -> deixa o usuário mapear
-      setMapCol(idx)
+      // não reconheceu -> deixa o usuário mapear (já pré-preenchido com o que detectou)
       setPrecisaMapear(true)
       setLinhas([])
     }
@@ -155,7 +216,7 @@ export default function ImportarPrecos({ onClose, onConcluido }) {
     linhasTexto.forEach((texto) => {
       const mPreco = texto.match(rePreco)
       if (!mPreco) return
-      const preco = parsePreco(mPreco[1])
+      const preco = parseNum(mPreco[1])
       if (isNaN(preco)) return
       const mCod = texto.match(reCodigo)
       const codigo = mCod ? mCod[1] : ''
@@ -163,7 +224,7 @@ export default function ImportarPrecos({ onClose, onConcluido }) {
       let descricao = texto.replace(mPreco[0], '')
       if (mCod) descricao = descricao.replace(mCod[0], '')
       descricao = descricao.replace(/\s+/g, ' ').trim()
-      out.push({ codigo, descricao, preco })
+      out.push({ codigo, descricao, preco, preco_vista: preco, preco_prazo: null, margem_vista: null, margem_prazo: null, estoque: null })
     })
     if (!out.length) throw new Error('Não foi possível extrair preços do PDF.')
     setLinhas(out)
@@ -190,8 +251,8 @@ export default function ImportarPrecos({ onClose, onConcluido }) {
   }
 
   function aplicarMapeamento() {
-    if (mapCol.codigo < 0 || mapCol.preco < 0) {
-      toast('Selecione ao menos as colunas de código e preço.')
+    if (mapCol.codigo < 0 || (mapCol.preco_vista < 0 && mapCol.preco_prazo < 0)) {
+      toast('Selecione ao menos o código e um preço (à vista ou a prazo).')
       return
     }
     const ls = montarLinhas(matriz, mapCol)
@@ -230,6 +291,11 @@ export default function ImportarPrecos({ onClose, onConcluido }) {
           codigo: l.codigo,
           descricao: l.descricao || ex?.descricao || l.codigo,
           preco: l.preco,
+          preco_vista: l.preco_vista ?? ex?.preco_vista ?? null,
+          preco_prazo: l.preco_prazo ?? ex?.preco_prazo ?? null,
+          margem_vista: l.margem_vista ?? ex?.margem_vista ?? null,
+          margem_prazo: l.margem_prazo ?? ex?.margem_prazo ?? null,
+          estoque: l.estoque ?? ex?.estoque ?? 0,
           atualizado_em: new Date().toISOString(),
         }
       })
@@ -259,6 +325,9 @@ export default function ImportarPrecos({ onClose, onConcluido }) {
     </option>
   ))
 
+  // colunas detectadas (para o resumo)
+  const detectadas = CAMPOS.filter((k) => mapCol[k] >= 0)
+
   return (
     <div>
       <div className="field">
@@ -274,29 +343,21 @@ export default function ImportarPrecos({ onClose, onConcluido }) {
 
       {precisaMapear && (
         <div className="card mb">
-          <p className="section-title">Não reconheci o cabeçalho — indique as colunas:</p>
-          <div className="row">
-            <div className="field">
-              <label>Código</label>
-              <select value={mapCol.codigo} onChange={(e) => setMapCol({ ...mapCol, codigo: Number(e.target.value) })}>
-                <option value={-1}>—</option>
-                {opcoesColuna}
-              </select>
-            </div>
-            <div className="field">
-              <label>Descrição</label>
-              <select value={mapCol.descricao} onChange={(e) => setMapCol({ ...mapCol, descricao: Number(e.target.value) })}>
-                <option value={-1}>—</option>
-                {opcoesColuna}
-              </select>
-            </div>
-            <div className="field">
-              <label>Preço</label>
-              <select value={mapCol.preco} onChange={(e) => setMapCol({ ...mapCol, preco: Number(e.target.value) })}>
-                <option value={-1}>—</option>
-                {opcoesColuna}
-              </select>
-            </div>
+          <p className="section-title">Indique as colunas da planilha:</p>
+          <p className="muted mb">Reconheci automaticamente o que deu — confira e ajuste se precisar.</p>
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            {CAMPOS.map((k) => (
+              <div className="field" key={k} style={{ minWidth: 150 }}>
+                <label>{ROTULO[k]}</label>
+                <select
+                  value={mapCol[k]}
+                  onChange={(e) => setMapCol({ ...mapCol, [k]: Number(e.target.value) })}
+                >
+                  <option value={-1}>—</option>
+                  {opcoesColuna}
+                </select>
+              </div>
+            ))}
           </div>
           <button className="btn btn-azul" onClick={aplicarMapeamento}>
             Aplicar mapeamento
@@ -306,14 +367,30 @@ export default function ImportarPrecos({ onClose, onConcluido }) {
 
       {linhas.length > 0 && (
         <>
-          <p className="section-title">Pré-visualização ({linhas.length} linhas)</p>
+          <div className="between mb">
+            <p className="section-title" style={{ margin: 0 }}>Pré-visualização ({linhas.length} linhas)</p>
+            {cabecalho.length > 0 && (
+              <button className="btn btn-outline btn-sm" onClick={() => setPrecisaMapear(true)}>
+                Ajustar colunas
+              </button>
+            )}
+          </div>
+          {detectadas.length > 0 && (
+            <p className="muted mb" style={{ fontSize: 12 }}>
+              Colunas reconhecidas: {detectadas.map((k) => ROTULO[k]).join(' · ')}
+            </p>
+          )}
           <div style={{ overflowX: 'auto', maxHeight: '40vh', overflowY: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ textAlign: 'left' }}>
                   <th style={{ padding: '6px 8px' }}>Código</th>
                   <th style={{ padding: '6px 8px' }}>Descrição</th>
-                  <th style={{ padding: '6px 8px', textAlign: 'right' }}>Preço</th>
+                  <th style={{ padding: '6px 8px', textAlign: 'right' }}>À vista</th>
+                  <th style={{ padding: '6px 8px', textAlign: 'right' }}>MG %</th>
+                  <th style={{ padding: '6px 8px', textAlign: 'right' }}>A prazo</th>
+                  <th style={{ padding: '6px 8px', textAlign: 'right' }}>MG %</th>
+                  <th style={{ padding: '6px 8px', textAlign: 'right' }}>Estoque</th>
                   <th style={{ padding: '6px 8px' }}>Situação</th>
                 </tr>
               </thead>
@@ -324,7 +401,21 @@ export default function ImportarPrecos({ onClose, onConcluido }) {
                     <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
                       <td className="mono" style={{ padding: '6px 8px' }}>{l.codigo}</td>
                       <td style={{ padding: '6px 8px' }}>{l.descricao || '—'}</td>
-                      <td className="mono" style={{ padding: '6px 8px', textAlign: 'right' }}>{brl(l.preco)}</td>
+                      <td className="mono" style={{ padding: '6px 8px', textAlign: 'right' }}>
+                        {l.preco_vista != null ? brl(l.preco_vista) : '—'}
+                      </td>
+                      <td className="mono" style={{ padding: '6px 8px', textAlign: 'right' }}>
+                        {l.margem_vista != null ? numero(l.margem_vista, 1) + '%' : '—'}
+                      </td>
+                      <td className="mono" style={{ padding: '6px 8px', textAlign: 'right' }}>
+                        {l.preco_prazo != null ? brl(l.preco_prazo) : '—'}
+                      </td>
+                      <td className="mono" style={{ padding: '6px 8px', textAlign: 'right' }}>
+                        {l.margem_prazo != null ? numero(l.margem_prazo, 1) + '%' : '—'}
+                      </td>
+                      <td className="mono" style={{ padding: '6px 8px', textAlign: 'right' }}>
+                        {l.estoque != null ? numero(l.estoque) : '—'}
+                      </td>
                       <td style={{ padding: '6px 8px' }}>
                         <span className={badgeSit(sit)}>{sit}</span>
                       </td>

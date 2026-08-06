@@ -47,10 +47,16 @@ export default function Equipe() {
     })
     setSalvando(false)
     if (error || data?.error) {
-      toast(data?.error || error?.message || 'Erro ao cadastrar vendedor')
+      // Em respostas non-2xx, o supabase-js guarda o corpo em error.context (Response).
+      let msg = data?.error || error?.message || 'Erro ao cadastrar vendedor'
+      try {
+        const corpo = await error?.context?.json?.()
+        if (corpo?.error) msg = corpo.error
+      } catch { /* mantém msg */ }
+      toast(msg)
       return
     }
-    toast('Vendedor cadastrado!')
+    toast(data?.atualizado ? 'Vendedor atualizado!' : 'Vendedor cadastrado!')
     setNome('')
     setEmail('')
     setSenha('')

@@ -5,6 +5,7 @@ import App from './App.jsx'
 import { AuthProvider } from './context/AuthContext.jsx'
 import { ToastProvider } from './context/ToastContext.jsx'
 import { ExpedienteProvider } from './context/ExpedienteContext.jsx'
+import AtualizacaoPWA from './components/AtualizacaoPWA.jsx'
 import './styles/theme.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -14,6 +15,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <ToastProvider>
           <ExpedienteProvider>
             <App />
+            <AtualizacaoPWA />
           </ExpedienteProvider>
         </ToastProvider>
       </AuthProvider>

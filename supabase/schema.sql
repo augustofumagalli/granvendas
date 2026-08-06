@@ -26,7 +26,11 @@ create table if not exists produtos (
   codigo text unique,
   descricao text not null,
   unidade text default 'UN',
-  preco numeric(12,2) not null default 0,
+  preco numeric(12,2) not null default 0, -- preço principal (usado nos orçamentos) = à vista
+  preco_vista numeric(12,2),              -- preço à vista
+  preco_prazo numeric(12,2),              -- preço a prazo
+  margem_vista numeric(6,2),              -- margem/markup do à vista em % (MG %)
+  margem_prazo numeric(6,2),              -- margem/markup do a prazo em % (MG %)
   estoque numeric(12,2) not null default 0,
   ativo boolean default true,
   atualizado_em timestamptz default now()
@@ -59,9 +63,20 @@ create table if not exists orcamentos (
   total numeric(12,2) not null default 0,
   observacao text,
   validade_dias int default 7,
+  condicao_pagamento text, -- condição escolhida (snapshot do rótulo)
   criado_em timestamptz default now(),
   enviado_em timestamptz,
   fechado_em timestamptz
+);
+
+-- ---------- CONDIÇÕES DE PAGAMENTO (compartilhadas: gestor e vendedor) ----------
+create table if not exists condicoes_pagamento (
+  id uuid primary key default gen_random_uuid(),
+  nome text not null,
+  tipo text not null default 'dias', -- 'dias' | 'meses'
+  parcelas jsonb not null default '[]'::jsonb, -- ex: [30,60,90] (dias) ou [1,2,3] (meses)
+  ativo boolean default true,
+  criado_em timestamptz default now()
 );
 
 create table if not exists orcamento_itens (
@@ -148,6 +163,7 @@ alter table orcamento_itens enable row level security;
 alter table visitas enable row level security;
 alter table rotas enable row level security;
 alter table rota_pontos enable row level security;
+alter table condicoes_pagamento enable row level security;
 alter table importacoes_preco enable row level security;
 
 -- Perfis: cada um vê/edita o próprio
@@ -173,6 +189,7 @@ create policy "perfil_gestor_le_todos" on perfis for select using (public.is_ges
 create policy "produtos_auth" on produtos for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 create policy "clientes_auth" on clientes for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 create policy "importacoes_auth" on importacoes_preco for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create policy "condicoes_auth" on condicoes_pagamento for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 
 -- Orçamentos/itens/visitas/rotas: cada vendedor só o que é seu
 create policy "orc_proprio" on orcamentos for all using (auth.uid() = perfil_id) with check (auth.uid() = perfil_id);
