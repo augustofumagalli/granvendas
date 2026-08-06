@@ -3,6 +3,8 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { brl, numero, data as fmtData } from '../lib/format'
+import Modal from '../components/Modal'
+import MapaRota from '../components/MapaRota'
 
 // YYYY-MM-DD no horário local
 function diaLocal(d) {
@@ -57,7 +59,37 @@ export default function Relatorios() {
   const [fechados, setFechados] = useState([])
   const [rotas, setRotas] = useState([])
 
+  // Mapa da rota de um dia
+  const [rotaDia, setRotaDia] = useState(null) // 'YYYY-MM-DD'
+  const [carregandoRota, setCarregandoRota] = useState(false)
+  const [pontosDia, setPontosDia] = useState([])
+  const [visitasDia, setVisitasDia] = useState([])
+
   const { inicioDia, fimDia } = useMemo(() => calcularPeriodo(periodo), [periodo])
+
+  async function abrirRota(dia) {
+    setRotaDia(dia)
+    setCarregandoRota(true)
+    setPontosDia([])
+    setVisitasDia([])
+    const [rPontos, rVisitas] = await Promise.all([
+      supabase
+        .from('rota_pontos')
+        .select('lat, lng, capturado_em')
+        .eq('perfil_id', user.id)
+        .eq('data', dia)
+        .order('capturado_em', { ascending: true }),
+      supabase
+        .from('visitas')
+        .select('lat, lng, cliente_nome')
+        .eq('perfil_id', user.id)
+        .eq('data', dia),
+    ])
+    if (rPontos.error || rVisitas.error) toast('Erro ao carregar a rota')
+    setPontosDia(rPontos.data || [])
+    setVisitasDia((rVisitas.data || []).filter((v) => v.lat != null && v.lng != null))
+    setCarregandoRota(false)
+  }
 
   useEffect(() => {
     async function carregar() {
@@ -217,6 +249,7 @@ export default function Relatorios() {
                   <th style={{ textAlign: 'right' }}>Orç. enviados</th>
                   <th style={{ textAlign: 'right' }}>Orç. fechados</th>
                   <th style={{ textAlign: 'right' }}>KM</th>
+                  <th style={{ textAlign: 'center' }}>Rota</th>
                 </tr>
               </thead>
               <tbody>
@@ -227,12 +260,40 @@ export default function Relatorios() {
                     <td className="mono" style={{ textAlign: 'right' }}>{numero(r.enviados)}</td>
                     <td className="mono" style={{ textAlign: 'right' }}>{numero(r.fechados)}</td>
                     <td className="mono" style={{ textAlign: 'right' }}>{numero(r.km, 1)}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      {(r.km > 0 || r.visitas > 0) ? (
+                        <button className="btn btn-outline btn-sm" onClick={() => abrirRota(r.dia)}>
+                          🗺️ Ver
+                        </button>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         </>
+      )}
+
+      {rotaDia && (
+        <Modal titulo={`Rota de ${fmtData(rotaDia)}`} onClose={() => setRotaDia(null)}>
+          {carregandoRota ? (
+            <div className="center"><div className="spin" /></div>
+          ) : pontosDia.length === 0 && visitasDia.length === 0 ? (
+            <div className="empty">Sem trajeto ou visitas com localização neste dia.</div>
+          ) : (
+            <>
+              <MapaRota pontos={pontosDia} visitas={visitasDia} />
+              <div className="muted mt">
+                {pontosDia.length > 0 ? `${numero(pontosDia.length)} pontos de trajeto` : 'Sem trajeto registrado'}
+                {' · '}
+                {numero(visitasDia.length)} visita(s) no mapa
+              </div>
+            </>
+          )}
+        </Modal>
       )}
     </div>
   )

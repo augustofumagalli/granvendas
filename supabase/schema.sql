@@ -99,6 +99,17 @@ create table if not exists rotas (
   unique (perfil_id, data)
 );
 
+-- ---------- PONTOS DO TRAJETO (GPS capturado com a plataforma ligada) ----------
+create table if not exists rota_pontos (
+  id uuid primary key default gen_random_uuid(),
+  perfil_id uuid references perfis(id) on delete cascade,
+  data date not null default current_date,
+  lat double precision not null,
+  lng double precision not null,
+  capturado_em timestamptz default now()
+);
+create index if not exists idx_rota_pontos_perfil_data on rota_pontos (perfil_id, data, capturado_em);
+
 -- ---------- IMPORTAÇÕES DE PREÇO (histórico) ----------
 create table if not exists importacoes_preco (
   id uuid primary key default gen_random_uuid(),
@@ -136,6 +147,7 @@ alter table orcamentos enable row level security;
 alter table orcamento_itens enable row level security;
 alter table visitas enable row level security;
 alter table rotas enable row level security;
+alter table rota_pontos enable row level security;
 alter table importacoes_preco enable row level security;
 
 -- Perfis: cada um vê/edita o próprio
@@ -169,6 +181,7 @@ create policy "orc_itens_proprio" on orcamento_itens for all
   with check (exists (select 1 from orcamentos o where o.id = orcamento_id and o.perfil_id = auth.uid()));
 create policy "visitas_proprio" on visitas for all using (auth.uid() = perfil_id) with check (auth.uid() = perfil_id);
 create policy "rotas_proprio" on rotas for all using (auth.uid() = perfil_id) with check (auth.uid() = perfil_id);
+create policy "rota_pontos_proprio" on rota_pontos for all using (auth.uid() = perfil_id) with check (auth.uid() = perfil_id);
 
 -- =====================================================================
 -- STORAGE: bucket para fotos das visitas
