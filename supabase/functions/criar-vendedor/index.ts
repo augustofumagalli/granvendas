@@ -82,21 +82,58 @@ Deno.serve(async (req) => {
     email_confirm: true,
     user_metadata: { nome },
   })
+
+  let vendedorId: string
+  let atualizado = false
+
   if (createErr || !created?.user) {
-    const msg = /already|registered|exists|duplicate/i.test(createErr?.message || '')
-      ? 'Já existe um usuário com este e-mail'
-      : createErr?.message || 'Erro ao criar vendedor'
-    return json({ error: msg }, 400)
+    const jaExiste = /already|registered|exists|duplicate/i.test(createErr?.message || '')
+    if (!jaExiste) {
+      return json({ error: createErr?.message || 'Erro ao criar vendedor' }, 400)
+    }
+
+    // E-mail já existe: localiza o usuário e o adota (atualiza nome + senha), em vez de travar.
+    const existente = await acharUsuarioPorEmail(adminClient, email)
+    if (!existente) {
+      return json({ error: 'Já existe um usuário com este e-mail' }, 400)
+    }
+    const { error: updErr } = await adminClient.auth.admin.updateUserById(existente.id, {
+      password: senha,
+      email_confirm: true,
+      user_metadata: { nome },
+    })
+    if (updErr) {
+      return json({ error: 'Vendedor já existe e não foi possível atualizá-lo: ' + updErr.message }, 500)
+    }
+    vendedorId = existente.id
+    atualizado = true
+  } else {
+    vendedorId = created.user.id
   }
 
   // Garante o perfil correto (o trigger já deve ter criado; upsert é rede de segurança).
-  const newId = created.user.id
   const { error: upErr } = await adminClient
     .from('perfis')
-    .upsert({ id: newId, nome, papel: 'vendedor' }, { onConflict: 'id' })
+    .upsert({ id: vendedorId, nome, papel: 'vendedor' }, { onConflict: 'id' })
   if (upErr) {
-    return json({ error: 'Vendedor criado, mas houve erro ao salvar o perfil' }, 500)
+    return json({ error: 'Vendedor salvo, mas houve erro ao salvar o perfil' }, 500)
   }
 
-  return json({ ok: true, id: newId })
+  return json({ ok: true, id: vendedorId, atualizado })
 })
+
+// Procura um usuário pelo e-mail percorrendo as páginas do Admin API.
+async function acharUsuarioPorEmail(
+  admin: ReturnType<typeof createClient>,
+  email: string,
+): Promise<{ id: string; email?: string } | null> {
+  const alvo = email.toLowerCase()
+  for (let page = 1; page <= 20; page++) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 200 })
+    if (error) return null
+    const achado = (data?.users || []).find((u) => (u.email || '').toLowerCase() === alvo)
+    if (achado) return { id: achado.id, email: achado.email ?? undefined }
+    if (!data?.users || data.users.length < 200) break // última página
+  }
+  return null
+}
