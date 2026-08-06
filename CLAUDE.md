@@ -22,7 +22,7 @@ App PWA de vendas externas da **Grantubos**. React + Vite + Supabase.
 - `supabase/schema.sql` — tabelas + RLS + storage bucket `visitas`
 
 ## Banco (Supabase)
-Tabelas: `perfis`, `configuracoes`, `produtos`, `clientes`, `orcamentos`, `orcamento_itens`, `visitas`, `rotas`, `importacoes_preco`. RLS: produtos/clientes compartilhados entre autenticados; orçamentos/visitas/rotas filtrados por `perfil_id = auth.uid()`.
+Tabelas: `perfis`, `configuracoes`, `produtos`, `clientes`, `orcamentos`, `orcamento_itens`, `visitas`, `rotas`, `rota_pontos` (pontos GPS do trajeto p/ o mapa da rota), `importacoes_preco`. RLS: produtos/clientes compartilhados entre autenticados; orçamentos/visitas/rotas filtrados por `perfil_id = auth.uid()`.
 
 ## Convenções
 - JSX (sem TypeScript), componentes funcionais + hooks.
