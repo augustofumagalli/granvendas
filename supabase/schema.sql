@@ -29,7 +29,8 @@ create table if not exists produtos (
   preco numeric(12,2) not null default 0, -- preço principal (usado nos orçamentos) = à vista
   preco_vista numeric(12,2),              -- preço à vista
   preco_prazo numeric(12,2),              -- preço a prazo
-  margem numeric(6,2),                    -- margem/markup em % (MG %)
+  margem_vista numeric(6,2),              -- margem/markup do à vista em % (MG %)
+  margem_prazo numeric(6,2),              -- margem/markup do a prazo em % (MG %)
   estoque numeric(12,2) not null default 0,
   ativo boolean default true,
   atualizado_em timestamptz default now()

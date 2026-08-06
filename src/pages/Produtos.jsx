@@ -19,12 +19,12 @@ export default function Produtos() {
   const [busca, setBusca] = useState('')
 
   const [sel, setSel] = useState(null) // produto em edição
-  const [editForm, setEditForm] = useState({ preco_vista: '', preco_prazo: '', margem: '', estoque: '' })
+  const [editForm, setEditForm] = useState({ preco_vista: '', preco_prazo: '', margem_vista: '', margem_prazo: '', estoque: '' })
   const [salvando, setSalvando] = useState(false)
 
   const [showImport, setShowImport] = useState(false)
   const [showNovo, setShowNovo] = useState(false)
-  const [novo, setNovo] = useState({ codigo: '', descricao: '', unidade: '', preco_vista: '', preco_prazo: '', margem: '', estoque: '' })
+  const [novo, setNovo] = useState({ codigo: '', descricao: '', unidade: '', preco_vista: '', preco_prazo: '', margem_vista: '', margem_prazo: '', estoque: '' })
 
   async function carregar() {
     setCarregando(true)
@@ -51,7 +51,8 @@ export default function Produtos() {
     setEditForm({
       preco_vista: p.preco_vista ?? p.preco ?? '',
       preco_prazo: p.preco_prazo ?? '',
-      margem: p.margem ?? '',
+      margem_vista: p.margem_vista ?? '',
+      margem_prazo: p.margem_prazo ?? '',
       estoque: p.estoque ?? '',
     })
   }
@@ -68,7 +69,8 @@ export default function Produtos() {
         preco: vista ?? prazo ?? 0,
         preco_vista: vista,
         preco_prazo: prazo,
-        margem: editForm.margem === '' ? null : Number(editForm.margem),
+        margem_vista: editForm.margem_vista === '' ? null : Number(editForm.margem_vista),
+        margem_prazo: editForm.margem_prazo === '' ? null : Number(editForm.margem_prazo),
         estoque: Number(editForm.estoque) || 0,
         atualizado_em: new Date().toISOString(),
       })
@@ -98,7 +100,8 @@ export default function Produtos() {
       preco: vista ?? prazo ?? 0,
       preco_vista: vista,
       preco_prazo: prazo,
-      margem: novo.margem === '' ? null : Number(novo.margem),
+      margem_vista: novo.margem_vista === '' ? null : Number(novo.margem_vista),
+      margem_prazo: novo.margem_prazo === '' ? null : Number(novo.margem_prazo),
       estoque: Number(novo.estoque) || 0,
       atualizado_em: new Date().toISOString(),
     })
@@ -109,7 +112,7 @@ export default function Produtos() {
     }
     toast('Produto criado')
     setShowNovo(false)
-    setNovo({ codigo: '', descricao: '', unidade: '', preco_vista: '', preco_prazo: '', margem: '', estoque: '' })
+    setNovo({ codigo: '', descricao: '', unidade: '', preco_vista: '', preco_prazo: '', margem_vista: '', margem_prazo: '', estoque: '' })
     carregar()
   }
 
@@ -152,7 +155,8 @@ export default function Produtos() {
                 <div className="title">{p.descricao}</div>
                 <div className="sub">
                   Cód: {p.codigo} · Estoque: {numero(p.estoque)} {p.unidade || ''}
-                  {p.margem != null ? ` · MG ${numero(p.margem, 1)}%` : ''}
+                  {p.margem_vista != null ? ` · MG vista ${numero(p.margem_vista, 1)}%` : ''}
+                  {p.margem_prazo != null ? ` · MG prazo ${numero(p.margem_prazo, 1)}%` : ''}
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>
@@ -195,14 +199,25 @@ export default function Produtos() {
           </div>
           <div className="row">
             <div className="field">
-              <label>Margem (MG %)</label>
+              <label>Margem à vista (MG %)</label>
               <input
                 type="number"
                 step="0.01"
-                value={editForm.margem}
-                onChange={(e) => setEditForm({ ...editForm, margem: e.target.value })}
+                value={editForm.margem_vista}
+                onChange={(e) => setEditForm({ ...editForm, margem_vista: e.target.value })}
               />
             </div>
+            <div className="field">
+              <label>Margem a prazo (MG %)</label>
+              <input
+                type="number"
+                step="0.01"
+                value={editForm.margem_prazo}
+                onChange={(e) => setEditForm({ ...editForm, margem_prazo: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="row">
             <div className="field">
               <label>Estoque</label>
               <input
@@ -250,9 +265,15 @@ export default function Produtos() {
           </div>
           <div className="row">
             <div className="field">
-              <label>Margem (MG %)</label>
-              <input type="number" step="0.01" value={novo.margem} onChange={(e) => setNovo({ ...novo, margem: e.target.value })} />
+              <label>Margem à vista (MG %)</label>
+              <input type="number" step="0.01" value={novo.margem_vista} onChange={(e) => setNovo({ ...novo, margem_vista: e.target.value })} />
             </div>
+            <div className="field">
+              <label>Margem a prazo (MG %)</label>
+              <input type="number" step="0.01" value={novo.margem_prazo} onChange={(e) => setNovo({ ...novo, margem_prazo: e.target.value })} />
+            </div>
+          </div>
+          <div className="row">
             <div className="field">
               <label>Estoque</label>
               <input type="number" step="1" value={novo.estoque} onChange={(e) => setNovo({ ...novo, estoque: e.target.value })} />

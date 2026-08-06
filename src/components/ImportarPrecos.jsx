@@ -18,26 +18,29 @@ const norm = (s) =>
     .trim()
 
 // Campos que a planilha pode ter (em qualquer ordem)
-const CAMPOS = ['codigo', 'descricao', 'preco_vista', 'preco_prazo', 'margem', 'estoque']
+const CAMPOS = ['codigo', 'descricao', 'preco_vista', 'preco_prazo', 'margem_vista', 'margem_prazo', 'estoque']
 
 const ROTULO = {
   codigo: 'Código',
   descricao: 'Descrição',
   preco_vista: 'Preço à vista',
   preco_prazo: 'Preço a prazo',
-  margem: 'Margem (MG %)',
+  margem_vista: 'Margem à vista (MG %)',
+  margem_prazo: 'Margem a prazo (MG %)',
   estoque: 'Estoque',
 }
 
-// candidatos por tipo de coluna (já sem acento). A ordem importa: mais específico primeiro.
+// candidatos por tipo de coluna (já sem acento). Mais específico primeiro.
+// As margens (MG %) são detectadas à parte, por proximidade dos preços.
 const CAND = {
   codigo: ['codigo', 'cod', 'sku', 'referencia', 'ref'],
   descricao: ['descricao', 'discriminacao', 'produto', 'item', 'nome'],
   preco_vista: ['a vista', 'avista', 'preco a vista', 'vista', 'preco venda', 'preco', 'valor'],
   preco_prazo: ['a prazo', 'aprazo', 'preco a prazo', 'prazo'],
-  margem: ['margem', 'markup', 'mg %', 'mg%', 'mg'],
   estoque: ['estoque', 'saldo', 'quantidade', 'qtd', 'disponivel'],
 }
+const CAND_MARGEM = ['margem', 'markup', 'mg %', 'mg%', 'mg']
+const CAMPOS_SIMPLES = ['codigo', 'descricao', 'preco_vista', 'preco_prazo', 'estoque']
 
 const idxVazio = () => CAMPOS.reduce((o, k) => ((o[k] = -1), o), {})
 
@@ -52,13 +55,38 @@ function parseNum(v) {
 
 function detectarColunas(cab) {
   const idx = idxVazio()
+  const margens = [] // índices de todas as colunas "MG %"
   cab.forEach((c, i) => {
     const n = norm(c)
     if (!n) return
-    for (const key of CAMPOS) {
-      if (idx[key] === -1 && CAND[key].some((t) => n === t || n.includes(t))) idx[key] = i
+    if (CAND_MARGEM.some((t) => n === t || n.includes(t))) { margens.push(i); return }
+    for (const key of CAMPOS_SIMPLES) {
+      if (idx[key] === -1 && CAND[key].some((t) => n === t || n.includes(t))) { idx[key] = i; break }
     }
   })
+
+  // associa cada margem ao preço mais próximo (prioriza a que vem logo à direita do preço)
+  const livres = [...margens]
+  const atribuir = (precoKey, margemKey) => {
+    if (idx[precoKey] < 0 || !livres.length) return
+    let best = -1
+    let bestScore = Infinity
+    livres.forEach((mi) => {
+      const dist = mi - idx[precoKey]
+      const score = dist > 0 ? dist : Math.abs(dist) + 0.5 // prefere logo após o preço
+      if (score < bestScore) { bestScore = score; best = mi }
+    })
+    if (best >= 0) {
+      idx[margemKey] = best
+      livres.splice(livres.indexOf(best), 1)
+    }
+  }
+  atribuir('preco_prazo', 'margem_prazo')
+  atribuir('preco_vista', 'margem_vista')
+  // margem que sobrou sem par -> preenche o slot vazio, se houver
+  if (livres.length && idx.margem_vista < 0) idx.margem_vista = livres.shift()
+  if (livres.length && idx.margem_prazo < 0) idx.margem_prazo = livres.shift()
+
   return idx
 }
 
@@ -75,7 +103,8 @@ function montarLinhas(matriz, idx) {
     const descricao = idx.descricao >= 0 ? String(row[idx.descricao] ?? '').trim() : ''
     const pv = idx.preco_vista >= 0 ? parseNum(row[idx.preco_vista]) : NaN
     const pp = idx.preco_prazo >= 0 ? parseNum(row[idx.preco_prazo]) : NaN
-    const mg = idx.margem >= 0 ? parseNum(row[idx.margem]) : NaN
+    const mv = idx.margem_vista >= 0 ? parseNum(row[idx.margem_vista]) : NaN
+    const mp = idx.margem_prazo >= 0 ? parseNum(row[idx.margem_prazo]) : NaN
     const est = idx.estoque >= 0 ? parseNum(row[idx.estoque]) : NaN
     const preco = !isNaN(pv) ? pv : !isNaN(pp) ? pp : 0
     out.push({
@@ -84,7 +113,8 @@ function montarLinhas(matriz, idx) {
       preco,
       preco_vista: isNaN(pv) ? null : pv,
       preco_prazo: isNaN(pp) ? null : pp,
-      margem: isNaN(mg) ? null : mg,
+      margem_vista: isNaN(mv) ? null : mv,
+      margem_prazo: isNaN(mp) ? null : mp,
       estoque: isNaN(est) ? null : est,
     })
   }
@@ -110,7 +140,7 @@ export default function ImportarPrecos({ onClose, onConcluido }) {
   useEffect(() => {
     supabase
       .from('produtos')
-      .select('codigo,preco,descricao,preco_vista,preco_prazo,margem,estoque')
+      .select('codigo,preco,descricao,preco_vista,preco_prazo,margem_vista,margem_prazo,estoque')
       .then(({ data }) => {
         const m = {}
         ;(data || []).forEach((p) => {
@@ -194,7 +224,7 @@ export default function ImportarPrecos({ onClose, onConcluido }) {
       let descricao = texto.replace(mPreco[0], '')
       if (mCod) descricao = descricao.replace(mCod[0], '')
       descricao = descricao.replace(/\s+/g, ' ').trim()
-      out.push({ codigo, descricao, preco, preco_vista: preco, preco_prazo: null, margem: null, estoque: null })
+      out.push({ codigo, descricao, preco, preco_vista: preco, preco_prazo: null, margem_vista: null, margem_prazo: null, estoque: null })
     })
     if (!out.length) throw new Error('Não foi possível extrair preços do PDF.')
     setLinhas(out)
@@ -263,7 +293,8 @@ export default function ImportarPrecos({ onClose, onConcluido }) {
           preco: l.preco,
           preco_vista: l.preco_vista ?? ex?.preco_vista ?? null,
           preco_prazo: l.preco_prazo ?? ex?.preco_prazo ?? null,
-          margem: l.margem ?? ex?.margem ?? null,
+          margem_vista: l.margem_vista ?? ex?.margem_vista ?? null,
+          margem_prazo: l.margem_prazo ?? ex?.margem_prazo ?? null,
           estoque: l.estoque ?? ex?.estoque ?? 0,
           atualizado_em: new Date().toISOString(),
         }
@@ -356,6 +387,7 @@ export default function ImportarPrecos({ onClose, onConcluido }) {
                   <th style={{ padding: '6px 8px' }}>Código</th>
                   <th style={{ padding: '6px 8px' }}>Descrição</th>
                   <th style={{ padding: '6px 8px', textAlign: 'right' }}>À vista</th>
+                  <th style={{ padding: '6px 8px', textAlign: 'right' }}>MG %</th>
                   <th style={{ padding: '6px 8px', textAlign: 'right' }}>A prazo</th>
                   <th style={{ padding: '6px 8px', textAlign: 'right' }}>MG %</th>
                   <th style={{ padding: '6px 8px', textAlign: 'right' }}>Estoque</th>
@@ -373,10 +405,13 @@ export default function ImportarPrecos({ onClose, onConcluido }) {
                         {l.preco_vista != null ? brl(l.preco_vista) : '—'}
                       </td>
                       <td className="mono" style={{ padding: '6px 8px', textAlign: 'right' }}>
+                        {l.margem_vista != null ? numero(l.margem_vista, 1) + '%' : '—'}
+                      </td>
+                      <td className="mono" style={{ padding: '6px 8px', textAlign: 'right' }}>
                         {l.preco_prazo != null ? brl(l.preco_prazo) : '—'}
                       </td>
                       <td className="mono" style={{ padding: '6px 8px', textAlign: 'right' }}>
-                        {l.margem != null ? numero(l.margem, 1) + '%' : '—'}
+                        {l.margem_prazo != null ? numero(l.margem_prazo, 1) + '%' : '—'}
                       </td>
                       <td className="mono" style={{ padding: '6px 8px', textAlign: 'right' }}>
                         {l.estoque != null ? numero(l.estoque) : '—'}
