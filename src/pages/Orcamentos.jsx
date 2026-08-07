@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import Modal from '../components/Modal'
-import { brl, numero, data, soDigitos } from '../lib/format'
+import { brl, numero, data, soDigitos, combinaCuringa, formataTelefone, formataCNPJ } from '../lib/format'
 
 const STATUS_FILTROS = [
   { valor: 'todos', label: 'Todos' },
@@ -33,6 +33,7 @@ export default function Orcamentos() {
   const [condicoes, setCondicoes] = useState([])
 
   const [modalNovo, setModalNovo] = useState(false)
+  const [editando, setEditando] = useState(null)
   const [detalhe, setDetalhe] = useState(null)
 
   async function carregar() {
@@ -66,6 +67,12 @@ export default function Orcamentos() {
   function abrirNovo() {
     carregarAuxiliares()
     setModalNovo(true)
+  }
+
+  function abrirEdicao(orc) {
+    carregarAuxiliares()
+    setDetalhe(null)
+    setEditando(orc)
   }
 
   const lista =
@@ -117,15 +124,17 @@ export default function Orcamentos() {
         ))
       )}
 
-      {modalNovo && (
+      {(modalNovo || editando) && (
         <ModalNovo
           user={user}
           clientes={clientes}
           produtos={produtos}
           condicoes={condicoes}
+          orcamentoExistente={editando}
+          recarregarAux={carregarAuxiliares}
           toast={toast}
-          onClose={() => setModalNovo(false)}
-          onSalvo={() => { setModalNovo(false); carregar() }}
+          onClose={() => { setModalNovo(false); setEditando(null) }}
+          onSalvo={() => { setModalNovo(false); setEditando(null); carregar() }}
         />
       )}
 
@@ -134,6 +143,7 @@ export default function Orcamentos() {
           orcamento={detalhe}
           vendedor={perfil}
           toast={toast}
+          onEditar={abrirEdicao}
           onClose={() => setDetalhe(null)}
           onMudou={() => { carregar() }}
         />
@@ -142,46 +152,83 @@ export default function Orcamentos() {
   )
 }
 
-function ModalNovo({ user, clientes, produtos, condicoes, toast, onClose, onSalvo }) {
-  const [clienteId, setClienteId] = useState('')
+function ModalNovo({ user, clientes, produtos, condicoes, orcamentoExistente, recarregarAux, toast, onClose, onSalvo }) {
+  const edicao = !!orcamentoExistente
+  const [clienteId, setClienteId] = useState(orcamentoExistente?.cliente_id || '')
   const [itens, setItens] = useState([])
-  const [observacao, setObservacao] = useState('')
-  const [validadeDias, setValidadeDias] = useState(7)
-  const [condicaoPagamento, setCondicaoPagamento] = useState('')
+  const [observacao, setObservacao] = useState(orcamentoExistente?.observacao || '')
+  const [validadeDias, setValidadeDias] = useState(orcamentoExistente?.validade_dias ?? 7)
+  const [condicaoPagamento, setCondicaoPagamento] = useState(orcamentoExistente?.condicao_pagamento || '')
   const [salvando, setSalvando] = useState(false)
+  const [carregandoItens, setCarregandoItens] = useState(edicao)
+
+  // itens criados na hora via cadastro rápido
+  const [clientesExtra, setClientesExtra] = useState([])
+  const [produtosExtra, setProdutosExtra] = useState([])
+  const todosClientes = [...clientesExtra, ...clientes]
+  const todosProdutos = [...produtosExtra, ...produtos]
 
   // form de item
+  const [buscaProd, setBuscaProd] = useState('')
   const [produtoId, setProdutoId] = useState('')
   const [qtd, setQtd] = useState(1)
   const [preco, setPreco] = useState(0)
+  const [unidade, setUnidade] = useState('')
+
+  // cadastro rápido
+  const [novoCliente, setNovoCliente] = useState(false)
+  const [novoProduto, setNovoProduto] = useState(false)
+
+  // No modo edição, carrega os itens existentes
+  useEffect(() => {
+    if (!edicao) return
+    let vivo = true
+    supabase.from('orcamento_itens').select('*').eq('orcamento_id', orcamentoExistente.id)
+      .then(({ data }) => {
+        if (!vivo) return
+        setItens((data || []).map((it) => ({
+          produto_id: it.produto_id,
+          descricao: it.descricao,
+          unidade: it.unidade || '',
+          quantidade: Number(it.quantidade) || 0,
+          preco_unit: Number(it.preco_unit) || 0,
+          subtotal: Number(it.subtotal) || 0,
+        })))
+        setCarregandoItens(false)
+      })
+    return () => { vivo = false }
+  }, [edicao, orcamentoExistente])
+
+  const produtosFiltrados = todosProdutos
+    .filter((p) => combinaCuringa(`${p.codigo || ''} ${p.descricao || ''}`, buscaProd))
+    .slice(0, 50)
 
   function aoEscolherProduto(id) {
     setProdutoId(id)
-    const p = produtos.find((x) => x.id === id)
+    const p = todosProdutos.find((x) => x.id === id)
     setPreco(p ? Number(p.preco) || 0 : 0)
+    setUnidade(p?.unidade || '')
     setQtd(1)
   }
 
   function adicionarItem() {
-    const p = produtos.find((x) => x.id === produtoId)
+    const p = todosProdutos.find((x) => x.id === produtoId)
     if (!p) { toast('Selecione um produto'); return }
     const quantidade = Number(qtd) || 0
     const precoUnit = Number(preco) || 0
     if (quantidade <= 0) { toast('Quantidade inválida'); return }
-    const subtotal = quantidade * precoUnit
     setItens((atual) => [
       ...atual,
       {
         produto_id: p.id,
         descricao: p.descricao,
+        unidade: (unidade || p.unidade || '').trim(),
         quantidade,
         preco_unit: precoUnit,
-        subtotal,
+        subtotal: quantidade * precoUnit,
       },
     ])
-    setProdutoId('')
-    setQtd(1)
-    setPreco(0)
+    setProdutoId(''); setBuscaProd(''); setQtd(1); setPreco(0); setUnidade('')
   }
 
   function removerItem(i) {
@@ -194,34 +241,37 @@ function ModalNovo({ user, clientes, produtos, condicoes, toast, onClose, onSalv
     if (!clienteId) { toast('Selecione um cliente'); return }
     if (itens.length === 0) { toast('Adicione ao menos um item'); return }
     setSalvando(true)
-    const cliente = clientes.find((c) => c.id === clienteId)
+    const cliente = todosClientes.find((c) => c.id === clienteId)
     const clienteNome = cliente?.razao_social || cliente?.nome_fantasia || 'Cliente'
+    const dadosOrc = {
+      total,
+      cliente_id: clienteId,
+      cliente_nome: clienteNome,
+      observacao,
+      validade_dias: Number(validadeDias) || 7,
+      condicao_pagamento: condicaoPagamento || null,
+    }
 
-    const { data: orc, error } = await supabase
-      .from('orcamentos')
-      .insert({
-        status: 'rascunho',
-        total,
-        perfil_id: user.id,
-        cliente_id: clienteId,
-        cliente_nome: clienteNome,
-        observacao,
-        validade_dias: Number(validadeDias) || 7,
-        condicao_pagamento: condicaoPagamento || null,
-      })
-      .select()
-      .single()
-
-    if (error || !orc) {
-      setSalvando(false)
-      toast('Erro ao salvar orçamento')
-      return
+    let orcId = orcamentoExistente?.id
+    if (edicao) {
+      const { error } = await supabase.from('orcamentos').update(dadosOrc).eq('id', orcId)
+      if (error) { setSalvando(false); toast('Erro ao salvar orçamento'); return }
+      await supabase.from('orcamento_itens').delete().eq('orcamento_id', orcId)
+    } else {
+      const { data: orc, error } = await supabase
+        .from('orcamentos')
+        .insert({ ...dadosOrc, status: 'rascunho', perfil_id: user.id })
+        .select()
+        .single()
+      if (error || !orc) { setSalvando(false); toast('Erro ao salvar orçamento'); return }
+      orcId = orc.id
     }
 
     const linhas = itens.map((it) => ({
-      orcamento_id: orc.id,
+      orcamento_id: orcId,
       produto_id: it.produto_id,
       descricao: it.descricao,
+      unidade: it.unidade || null,
       quantidade: it.quantidade,
       preco_unit: it.preco_unit,
       subtotal: it.subtotal,
@@ -229,37 +279,51 @@ function ModalNovo({ user, clientes, produtos, condicoes, toast, onClose, onSalv
     const { error: errItens } = await supabase.from('orcamento_itens').insert(linhas)
 
     setSalvando(false)
-    if (errItens) {
-      toast('Orçamento salvo, mas houve erro nos itens')
-    } else {
-      toast('Orçamento criado')
-    }
+    if (errItens) toast('Orçamento salvo, mas houve erro nos itens')
+    else toast(edicao ? 'Orçamento atualizado' : 'Orçamento criado')
     onSalvo()
   }
 
   return (
-    <Modal titulo="Novo orçamento" onClose={onClose}>
+    <Modal titulo={edicao ? `Editar orçamento Nº${orcamentoExistente.numero}` : 'Novo orçamento'} onClose={onClose}>
       <div className="field">
         <label>Cliente</label>
-        <select value={clienteId} onChange={(e) => setClienteId(e.target.value)}>
-          <option value="">Selecione…</option>
-          {clientes.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.razao_social || c.nome_fantasia || 'Cliente'}
-            </option>
-          ))}
-        </select>
+        <div className="row">
+          <select className="grow" value={clienteId} onChange={(e) => setClienteId(e.target.value)}>
+            <option value="">Selecione…</option>
+            {todosClientes.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.razao_social || c.nome_fantasia || 'Cliente'}
+              </option>
+            ))}
+          </select>
+          <button className="btn btn-outline btn-sm" onClick={() => setNovoCliente(true)}>+ Novo</button>
+        </div>
       </div>
 
       <div className="section-title mt">Itens</div>
 
       <div className="field">
-        <label>Produto</label>
+        <label>Buscar produto (use % como curinga)</label>
+        <div className="row">
+          <input
+            className="grow"
+            type="text"
+            placeholder="Ex.: tubo%inox%50"
+            value={buscaProd}
+            onChange={(e) => setBuscaProd(e.target.value)}
+          />
+          <button className="btn btn-outline btn-sm" onClick={() => setNovoProduto(true)}>+ Novo</button>
+        </div>
+      </div>
+
+      <div className="field">
+        <label>Produto{buscaProd ? ` (${produtosFiltrados.length})` : ''}</label>
         <select value={produtoId} onChange={(e) => aoEscolherProduto(e.target.value)}>
           <option value="">Selecione…</option>
-          {produtos.map((p) => (
+          {produtosFiltrados.map((p) => (
             <option key={p.id} value={p.id}>
-              {p.descricao} — {brl(p.preco)}
+              {p.codigo ? p.codigo + ' · ' : ''}{p.descricao} — {brl(p.preco)}
             </option>
           ))}
         </select>
@@ -268,29 +332,23 @@ function ModalNovo({ user, clientes, produtos, condicoes, toast, onClose, onSalv
       <div className="row">
         <div className="field grow">
           <label>Qtd</label>
-          <input
-            type="number"
-            min="0"
-            step="1"
-            value={qtd}
-            onChange={(e) => setQtd(e.target.value)}
-          />
+          <input type="number" min="0" step="1" value={qtd} onChange={(e) => setQtd(e.target.value)} />
+        </div>
+        <div className="field" style={{ maxWidth: 88 }}>
+          <label>Un</label>
+          <input type="text" value={unidade} placeholder="UN" onChange={(e) => setUnidade(e.target.value)} />
         </div>
         <div className="field grow">
           <label>Preço unit.</label>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={preco}
-            onChange={(e) => setPreco(e.target.value)}
-          />
+          <input type="number" min="0" step="0.01" value={preco} onChange={(e) => setPreco(e.target.value)} />
         </div>
       </div>
 
       <button className="btn btn-outline btn-sm mb" onClick={adicionarItem}>+ Adicionar item</button>
 
-      {itens.length === 0 ? (
+      {carregandoItens ? (
+        <div className="center"><div className="spin" /></div>
+      ) : itens.length === 0 ? (
         <div className="empty">Nenhum item adicionado.</div>
       ) : (
         itens.map((it, i) => (
@@ -298,7 +356,7 @@ function ModalNovo({ user, clientes, produtos, condicoes, toast, onClose, onSalv
             <div className="grow">
               <div className="title">{it.descricao}</div>
               <div className="sub">
-                {numero(it.quantidade)} × {brl(it.preco_unit)} = {brl(it.subtotal)}
+                {numero(it.quantidade)} {it.unidade || ''} × {brl(it.preco_unit)} = {brl(it.subtotal)}
               </div>
             </div>
             <button className="btn-ghost" onClick={() => removerItem(i)} aria-label="Remover">✕</button>
@@ -318,12 +376,7 @@ function ModalNovo({ user, clientes, produtos, condicoes, toast, onClose, onSalv
 
       <div className="field">
         <label>Validade (dias)</label>
-        <input
-          type="number"
-          min="1"
-          value={validadeDias}
-          onChange={(e) => setValidadeDias(e.target.value)}
-        />
+        <input type="number" min="1" value={validadeDias} onChange={(e) => setValidadeDias(e.target.value)} />
       </div>
 
       <div className="field">
@@ -341,7 +394,99 @@ function ModalNovo({ user, clientes, produtos, condicoes, toast, onClose, onSalv
 
       <div className="row mt">
         <button className="btn btn-azul grow" onClick={salvar} disabled={salvando}>
-          {salvando ? 'Salvando…' : 'Salvar orçamento'}
+          {salvando ? 'Salvando…' : edicao ? 'Salvar alterações' : 'Salvar orçamento'}
+        </button>
+        <button className="btn btn-outline" onClick={onClose}>Cancelar</button>
+      </div>
+
+      {novoCliente && (
+        <QuickCliente
+          user={user}
+          toast={toast}
+          onClose={() => setNovoCliente(false)}
+          onCriado={(c) => {
+            setClientesExtra((a) => [c, ...a])
+            setClienteId(c.id)
+            setNovoCliente(false)
+            recarregarAux && recarregarAux()
+          }}
+        />
+      )}
+      {novoProduto && (
+        <QuickProduto
+          toast={toast}
+          onClose={() => setNovoProduto(false)}
+          onCriado={(p) => {
+            setProdutosExtra((a) => [p, ...a])
+            setBuscaProd('')
+            setProdutoId(p.id)
+            setPreco(Number(p.preco) || 0)
+            setUnidade(p.unidade || '')
+            setQtd(1)
+            setNovoProduto(false)
+            recarregarAux && recarregarAux()
+          }}
+        />
+      )}
+    </Modal>
+  )
+}
+
+function QuickCliente({ user, toast, onClose, onCriado }) {
+  const [razao, setRazao] = useState('')
+  const [fantasia, setFantasia] = useState('')
+  const [telefone, setTelefone] = useState('')
+  const [cnpj, setCnpj] = useState('')
+  const [salvando, setSalvando] = useState(false)
+
+  async function salvar() {
+    if (!razao.trim()) { toast('Informe a razão social / nome'); return }
+    setSalvando(true)
+    const digitos = soDigitos(cnpj)
+    const { data, error } = await supabase
+      .from('clientes')
+      .insert({
+        cnpj: digitos.length === 14 ? digitos : null,
+        razao_social: razao.trim(),
+        nome_fantasia: fantasia.trim() || null,
+        telefone: telefone ? soDigitos(telefone) : null,
+        criado_por: user.id,
+      })
+      .select()
+      .single()
+    setSalvando(false)
+    if (error || !data) {
+      toast(error?.code === '23505' ? 'Já existe cliente com este CNPJ' : 'Erro ao criar cliente')
+      return
+    }
+    toast('Cliente cadastrado')
+    onCriado(data)
+  }
+
+  return (
+    <Modal titulo="Novo cliente" onClose={onClose}>
+      <div className="field">
+        <label>Razão social / Nome</label>
+        <input value={razao} onChange={(e) => setRazao(e.target.value)} />
+      </div>
+      <div className="field">
+        <label>Nome fantasia</label>
+        <input value={fantasia} onChange={(e) => setFantasia(e.target.value)} />
+      </div>
+      <div className="row">
+        <div className="field grow">
+          <label>Telefone</label>
+          <input inputMode="numeric" value={formataTelefone(telefone)} onChange={(e) => setTelefone(soDigitos(e.target.value))} />
+        </div>
+        <div className="field grow">
+          <label>CNPJ (opcional)</label>
+          <input inputMode="numeric" value={formataCNPJ(cnpj)} onChange={(e) => setCnpj(soDigitos(e.target.value))} />
+        </div>
+      </div>
+      <div className="muted">Para o cadastro completo (endereço, busca por CNPJ), use a aba Clientes.</div>
+      <div className="row mt">
+        <button className="btn btn-verde grow" onClick={salvar} disabled={salvando}>
+          {salvando ? 'Salvando…' : 'Cadastrar cliente'}
         </button>
         <button className="btn btn-outline" onClick={onClose}>Cancelar</button>
       </div>
@@ -349,7 +494,71 @@ function ModalNovo({ user, clientes, produtos, condicoes, toast, onClose, onSalv
   )
 }
 
-function ModalDetalhe({ orcamento, vendedor, toast, onClose, onMudou }) {
+function QuickProduto({ toast, onClose, onCriado }) {
+  const [codigo, setCodigo] = useState('')
+  const [descricao, setDescricao] = useState('')
+  const [unidade, setUnidade] = useState('UN')
+  const [preco, setPreco] = useState('')
+  const [salvando, setSalvando] = useState(false)
+
+  async function salvar() {
+    if (!descricao.trim()) { toast('Informe a descrição'); return }
+    setSalvando(true)
+    const vista = preco === '' ? null : Number(preco)
+    const { data, error } = await supabase
+      .from('produtos')
+      .insert({
+        codigo: codigo.trim() || null,
+        descricao: descricao.trim(),
+        unidade: unidade.trim() || 'UN',
+        preco: vista ?? 0,
+        preco_vista: vista,
+        atualizado_em: new Date().toISOString(),
+      })
+      .select()
+      .single()
+    setSalvando(false)
+    if (error || !data) {
+      toast(error?.code === '23505' ? 'Já existe produto com este código' : 'Erro ao criar produto')
+      return
+    }
+    toast('Produto criado')
+    onCriado(data)
+  }
+
+  return (
+    <Modal titulo="Novo produto" onClose={onClose}>
+      <div className="row">
+        <div className="field" style={{ maxWidth: 120 }}>
+          <label>Código</label>
+          <input value={codigo} onChange={(e) => setCodigo(e.target.value)} />
+        </div>
+        <div className="field grow">
+          <label>Descrição</label>
+          <input value={descricao} onChange={(e) => setDescricao(e.target.value)} />
+        </div>
+      </div>
+      <div className="row">
+        <div className="field" style={{ maxWidth: 100 }}>
+          <label>Unidade</label>
+          <input value={unidade} placeholder="UN" onChange={(e) => setUnidade(e.target.value)} />
+        </div>
+        <div className="field grow">
+          <label>Preço (R$)</label>
+          <input type="number" step="0.01" value={preco} onChange={(e) => setPreco(e.target.value)} />
+        </div>
+      </div>
+      <div className="row mt">
+        <button className="btn btn-verde grow" onClick={salvar} disabled={salvando}>
+          {salvando ? 'Salvando…' : 'Criar produto'}
+        </button>
+        <button className="btn btn-outline" onClick={onClose}>Cancelar</button>
+      </div>
+    </Modal>
+  )
+}
+
+function ModalDetalhe({ orcamento, vendedor, toast, onEditar, onClose, onMudou }) {
   const [itens, setItens] = useState([])
   const [cliente, setCliente] = useState(null)
   const [status, setStatus] = useState(orcamento.status)
@@ -470,7 +679,7 @@ function ModalDetalhe({ orcamento, vendedor, toast, onClose, onMudou }) {
               <div key={it.id} className="list-item">
                 <div className="grow">
                   <div className="title">{it.descricao}</div>
-                  <div className="sub">{numero(it.quantidade)} × {brl(it.preco_unit)}</div>
+                  <div className="sub">{numero(it.quantidade)} {it.unidade || ''} × {brl(it.preco_unit)}</div>
                 </div>
                 <div className="mono">{brl(it.subtotal)}</div>
               </div>
@@ -488,6 +697,12 @@ function ModalDetalhe({ orcamento, vendedor, toast, onClose, onMudou }) {
               <span>{orcamento.condicao_pagamento}</span>
             </div>
           )}
+
+          <div className="row mb">
+            <button className="btn btn-outline grow" onClick={() => onEditar(orcamento)} disabled={ocupado}>
+              ✏️ Editar orçamento
+            </button>
+          </div>
 
           <div className="row mb">
             <button className="btn btn-verde grow" onClick={enviarWhatsapp} disabled={ocupado}>

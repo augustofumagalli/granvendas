@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
-import { soDigitos, formataTelefone } from '../lib/format'
+import { soDigitos, formataTelefone, numero } from '../lib/format'
 
 export default function Configuracoes() {
   const { user, perfil, logout } = useAuth()
@@ -21,53 +21,110 @@ export default function Configuracoes() {
   const [salvandoExpediente, setSalvandoExpediente] = useState(false)
 
   // Condições de pagamento (compartilhadas entre gestor e vendedor)
+  const CFORM_VAZIO = {
+    codigo: '', nome: '', parcelas_manuais: false, parcelas_texto: '',
+    prazo_maximo: '', num_parcelas: '', prazo_entre: '', primeira_a_vista: false,
+    tipo_juros: 'Juros Simples',
+    formas: { cheque: true, cartao: true, boleto: false, carteira: false, transferencia: true },
+    inativa: false,
+  }
   const [condicoes, setCondicoes] = useState([])
-  const [condNome, setCondNome] = useState('')
-  const [condTipo, setCondTipo] = useState('dias')
-  const [condParcelas, setCondParcelas] = useState('')
+  const [cForm, setCForm] = useState(CFORM_VAZIO)
+  const [cEditId, setCEditId] = useState(null)
   const [salvandoCond, setSalvandoCond] = useState(false)
+  const setC = (campo, valor) => setCForm((f) => ({ ...f, [campo]: valor }))
+
+  // Gera as parcelas (em dias) a partir do formulário
+  function calcularParcelas(f) {
+    if (f.parcelas_manuais) {
+      return f.parcelas_texto
+        .split(/[\/,;\s]+/)
+        .map((x) => Number(String(x).replace(',', '.')))
+        .filter((n) => Number.isFinite(n) && n >= 0)
+    }
+    const num = Number(f.num_parcelas) || 0
+    const entre = Number(f.prazo_entre) || 0
+    const arr = []
+    for (let i = 1; i <= num; i++) arr.push(f.primeira_a_vista ? (i - 1) * entre : i * entre)
+    return arr
+  }
+  const prazoMedio = (parc) =>
+    parc.length ? Math.round((parc.reduce((s, d) => s + d, 0) / parc.length) * 100) / 100 : 0
 
   async function carregarCondicoes() {
     const { data } = await supabase
       .from('condicoes_pagamento')
       .select('*')
-      .eq('ativo', true)
+      .order('codigo', { ascending: true, nullsFirst: false })
       .order('criado_em', { ascending: true })
     setCondicoes(data || [])
   }
 
-  async function adicionarCondicao() {
-    // parcelas: números separados por / , ; ou espaço
-    const parcelas = condParcelas
-      .split(/[\/,;\s]+/)
-      .map((x) => Number(String(x).replace(',', '.')))
-      .filter((n) => Number.isFinite(n) && n > 0)
-    const nome = condNome.trim() || (parcelas.length ? `${parcelas.join('/')} ${condTipo}` : '')
-    if (!nome) {
-      toast('Informe um nome ou as parcelas da condição')
-      return
+  function novaCondicao() {
+    setCForm(CFORM_VAZIO)
+    setCEditId(null)
+  }
+
+  function editarCondicao(c) {
+    setCEditId(c.id)
+    setCForm({
+      codigo: c.codigo ?? '',
+      nome: c.nome || '',
+      parcelas_manuais: !!c.parcelas_manuais,
+      parcelas_texto: Array.isArray(c.parcelas) ? c.parcelas.join('/') : '',
+      prazo_maximo: c.prazo_maximo ?? '',
+      num_parcelas: c.num_parcelas ?? '',
+      prazo_entre: c.prazo_entre ?? '',
+      primeira_a_vista: !!c.primeira_a_vista,
+      tipo_juros: c.tipo_juros || 'Juros Simples',
+      formas: {
+        cheque: (c.formas || []).includes('cheque'),
+        cartao: (c.formas || []).includes('cartao'),
+        boleto: (c.formas || []).includes('boleto'),
+        carteira: (c.formas || []).includes('carteira'),
+        transferencia: (c.formas || []).includes('transferencia'),
+      },
+      inativa: c.ativo === false,
+    })
+  }
+
+  async function gravarCondicao() {
+    const nome = cForm.nome.trim()
+    if (!nome) { toast('Informe a descrição da condição'); return }
+    const parcelas = calcularParcelas(cForm)
+    const registro = {
+      nome,
+      codigo: cForm.codigo === '' ? null : Number(cForm.codigo),
+      tipo: 'dias',
+      parcelas,
+      parcelas_manuais: cForm.parcelas_manuais,
+      prazo_maximo: cForm.prazo_maximo === '' ? null : Number(cForm.prazo_maximo),
+      num_parcelas: cForm.num_parcelas === '' ? null : Number(cForm.num_parcelas),
+      prazo_entre: cForm.prazo_entre === '' ? null : Number(cForm.prazo_entre),
+      primeira_a_vista: cForm.primeira_a_vista,
+      tipo_juros: cForm.tipo_juros,
+      formas: Object.keys(cForm.formas).filter((k) => cForm.formas[k]),
+      prazo_medio: prazoMedio(parcelas),
+      ativo: !cForm.inativa,
     }
     setSalvandoCond(true)
-    const { error } = await supabase
-      .from('condicoes_pagamento')
-      .insert({ nome, tipo: condTipo, parcelas })
+    const { error } = cEditId
+      ? await supabase.from('condicoes_pagamento').update(registro).eq('id', cEditId)
+      : await supabase.from('condicoes_pagamento').insert(registro)
     setSalvandoCond(false)
-    if (error) {
-      toast('Erro ao adicionar condição')
-      return
-    }
-    setCondNome('')
-    setCondParcelas('')
-    toast('Condição adicionada')
+    if (error) { toast('Erro ao gravar condição'); return }
+    toast(cEditId ? 'Condição atualizada' : 'Condição adicionada')
+    novaCondicao()
     carregarCondicoes()
   }
 
-  async function removerCondicao(id) {
-    const { error } = await supabase.from('condicoes_pagamento').update({ ativo: false }).eq('id', id)
-    if (error) {
-      toast('Erro ao remover condição')
-      return
-    }
+  async function excluirCondicao() {
+    if (!cEditId) { toast('Selecione uma condição na lista para excluir'); return }
+    if (!window.confirm('Excluir esta condição de pagamento?')) return
+    const { error } = await supabase.from('condicoes_pagamento').delete().eq('id', cEditId)
+    if (error) { toast('Erro ao excluir'); return }
+    toast('Condição excluída')
+    novaCondicao()
     carregarCondicoes()
   }
 
@@ -208,61 +265,148 @@ export default function Configuracoes() {
       </div>
 
       <div className="card mb">
-        <div className="section-title">Condições de pagamento</div>
+        <div className="section-title">Condição de pagamento</div>
         <div className="muted mb">
-          Cadastre as condições (por dias ou meses). Ficam disponíveis para todos ao montar um orçamento.
+          Cadastre as condições. Ficam disponíveis para todos (gestor e vendedor) ao montar um orçamento.
         </div>
 
-        <div className="field">
-          <label>Nome (opcional)</label>
-          <input
-            type="text"
-            placeholder="Ex.: À vista, Entrada + 30/60…"
-            value={condNome}
-            onChange={(e) => setCondNome(e.target.value)}
-          />
-        </div>
         <div className="row">
+          <div className="field" style={{ maxWidth: 110 }}>
+            <label>Código</label>
+            <input type="number" value={cForm.codigo} onChange={(e) => setC('codigo', e.target.value)} />
+          </div>
           <div className="field grow">
-            <label>Parcelas</label>
+            <label>Descrição</label>
+            <input
+              type="text"
+              placeholder="Ex.: À VISTA, 30/60/90 DIAS…"
+              value={cForm.nome}
+              onChange={(e) => setC('nome', e.target.value)}
+            />
+          </div>
+        </div>
+
+        <label className="row" style={{ alignItems: 'center', gap: 8, margin: '4px 0' }}>
+          <input type="checkbox" checked={cForm.parcelas_manuais} onChange={(e) => setC('parcelas_manuais', e.target.checked)} />
+          <span>Parcelas informadas manualmente</span>
+        </label>
+
+        {cForm.parcelas_manuais ? (
+          <div className="field">
+            <label>Parcelas (dias, separadas por / )</label>
             <input
               type="text"
               inputMode="numeric"
               placeholder="Ex.: 30/60/90"
-              value={condParcelas}
-              onChange={(e) => setCondParcelas(e.target.value)}
+              value={cForm.parcelas_texto}
+              onChange={(e) => setC('parcelas_texto', e.target.value)}
             />
           </div>
-          <div className="field" style={{ maxWidth: 130 }}>
-            <label>Tipo</label>
-            <select value={condTipo} onChange={(e) => setCondTipo(e.target.value)}>
-              <option value="dias">Dias</option>
-              <option value="meses">Meses</option>
-            </select>
+        ) : (
+          <>
+            <div className="row">
+              <div className="field grow">
+                <label>Nº Parcelas</label>
+                <input type="number" min="0" value={cForm.num_parcelas} onChange={(e) => setC('num_parcelas', e.target.value)} />
+              </div>
+              <div className="field grow">
+                <label>Prazo entre parc. (dias)</label>
+                <input type="number" min="0" value={cForm.prazo_entre} onChange={(e) => setC('prazo_entre', e.target.value)} />
+              </div>
+            </div>
+            <div className="row" style={{ alignItems: 'flex-end' }}>
+              <div className="field grow">
+                <label>Prazo máximo parcela (dias)</label>
+                <input type="number" min="0" value={cForm.prazo_maximo} onChange={(e) => setC('prazo_maximo', e.target.value)} />
+              </div>
+              <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <input type="checkbox" checked={cForm.primeira_a_vista} onChange={(e) => setC('primeira_a_vista', e.target.checked)} />
+                <span>1ª parcela à vista</span>
+              </label>
+            </div>
+          </>
+        )}
+
+        <div className="field">
+          <label>Tipo juros</label>
+          <select value={cForm.tipo_juros} onChange={(e) => setC('tipo_juros', e.target.value)}>
+            <option>Juros Simples</option>
+            <option>Juros Compostos</option>
+            <option>Sem juros</option>
+          </select>
+        </div>
+
+        <div className="field">
+          <label>Formas de pagamento permitidas</label>
+          <div className="row" style={{ flexWrap: 'wrap', gap: 12 }}>
+            {[
+              ['cheque', 'Cheque'],
+              ['cartao', 'Cartão'],
+              ['boleto', 'Boleto'],
+              ['carteira', 'Carteira'],
+              ['transferencia', 'Transferência'],
+            ].map(([k, lbl]) => (
+              <label key={k} className="row" style={{ alignItems: 'center', gap: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={!!cForm.formas[k]}
+                  onChange={(e) => setC('formas', { ...cForm.formas, [k]: e.target.checked })}
+                />
+                <span>{lbl}</span>
+              </label>
+            ))}
           </div>
         </div>
+
+        <label className="row" style={{ alignItems: 'center', gap: 8, margin: '4px 0' }}>
+          <input type="checkbox" checked={cForm.inativa} onChange={(e) => setC('inativa', e.target.checked)} />
+          <span>Condição de pagamento inativa?</span>
+        </label>
+
         <div className="row mt">
-          <button className="btn btn-azul grow" onClick={adicionarCondicao} disabled={salvandoCond}>
-            {salvandoCond ? <span className="spin" /> : '+ Adicionar condição'}
+          <button className="btn btn-outline" onClick={novaCondicao} disabled={salvandoCond}>Novo</button>
+          <button className="btn btn-verde grow" onClick={gravarCondicao} disabled={salvandoCond}>
+            {salvandoCond ? <span className="spin" /> : cEditId ? 'Gravar alterações' : 'Gravar'}
+          </button>
+          <button className="btn btn-outline" onClick={excluirCondicao} disabled={salvandoCond || !cEditId} style={{ color: '#c0392b', borderColor: '#e6b0aa' }}>
+            Excluir
           </button>
         </div>
 
-        <div className="mt">
-          {condicoes.length === 0 ? (
-            <div className="empty">Nenhuma condição cadastrada ainda.</div>
-          ) : (
-            condicoes.map((c) => (
-              <div key={c.id} className="list-item">
-                <div className="grow">
-                  <div className="title">{c.nome}</div>
-                  {Array.isArray(c.parcelas) && c.parcelas.length > 0 && (
-                    <div className="sub">{c.parcelas.join(' / ')} {c.tipo}</div>
-                  )}
-                </div>
-                <button className="btn-ghost" onClick={() => removerCondicao(c.id)} aria-label="Remover">✕</button>
-              </div>
-            ))
-          )}
+        <div className="section-title mt">Condições cadastradas</div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ textAlign: 'left' }}>
+                <th style={{ padding: '6px 6px' }}>Descrição</th>
+                <th style={{ padding: '6px 6px', textAlign: 'right' }}>Cód.</th>
+                <th style={{ padding: '6px 6px', textAlign: 'right' }}>Nº Parc.</th>
+                <th style={{ padding: '6px 6px', textAlign: 'right' }}>Prazo entre</th>
+                <th style={{ padding: '6px 6px', textAlign: 'right' }}>Prazo Médio</th>
+              </tr>
+            </thead>
+            <tbody>
+              {condicoes.length === 0 ? (
+                <tr><td colSpan={5} className="muted" style={{ padding: '10px 6px' }}>Nenhuma condição cadastrada ainda.</td></tr>
+              ) : (
+                condicoes.map((c) => (
+                  <tr
+                    key={c.id}
+                    onClick={() => editarCondicao(c)}
+                    style={{ borderTop: '1px solid var(--border)', cursor: 'pointer', background: cEditId === c.id ? 'var(--surface-2, #eef2f6)' : 'transparent' }}
+                  >
+                    <td style={{ padding: '6px 6px' }}>
+                      {c.nome}{c.ativo === false ? ' (inativa)' : ''}
+                    </td>
+                    <td className="mono" style={{ padding: '6px 6px', textAlign: 'right' }}>{c.codigo ?? '—'}</td>
+                    <td className="mono" style={{ padding: '6px 6px', textAlign: 'right' }}>{c.num_parcelas ?? (Array.isArray(c.parcelas) ? c.parcelas.length : 0)}</td>
+                    <td className="mono" style={{ padding: '6px 6px', textAlign: 'right' }}>{c.prazo_entre ?? '—'}</td>
+                    <td className="mono" style={{ padding: '6px 6px', textAlign: 'right' }}>{c.prazo_medio != null ? numero(c.prazo_medio, 0) : '—'}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 

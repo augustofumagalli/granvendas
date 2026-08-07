@@ -103,13 +103,14 @@ export async function gerarPdfOrcamento(orcamento, itens, cliente, vendedor) {
   const linhas = (itens || []).map((it) => [
     it.descricao || '',
     String(Number(it.quantidade) || 0),
+    it.unidade || '',
     brl(it.preco_unit),
     brl(it.subtotal),
   ])
 
   autoTable(doc, {
     startY: cardY + cardH + 6,
-    head: [['Descrição', 'Qtd', 'Vlr Unit', 'Subtotal']],
+    head: [['Descrição', 'Qtd', 'Un', 'Vlr Unit', 'Subtotal']],
     body: linhas,
     theme: 'striped',
     margin: { left: margem, right: margem },
@@ -118,9 +119,10 @@ export async function gerarPdfOrcamento(orcamento, itens, cliente, vendedor) {
     alternateRowStyles: { fillColor: [248, 249, 251] },
     columnStyles: {
       0: { cellWidth: 'auto' },
-      1: { halign: 'right', cellWidth: 18 },
-      2: { halign: 'right', cellWidth: 30 },
-      3: { halign: 'right', cellWidth: 32 },
+      1: { halign: 'right', cellWidth: 16 },
+      2: { halign: 'center', cellWidth: 14 },
+      3: { halign: 'right', cellWidth: 28 },
+      4: { halign: 'right', cellWidth: 30 },
     },
   })
 

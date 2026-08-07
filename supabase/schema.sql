@@ -72,10 +72,19 @@ create table if not exists orcamentos (
 -- ---------- CONDIÇÕES DE PAGAMENTO (compartilhadas: gestor e vendedor) ----------
 create table if not exists condicoes_pagamento (
   id uuid primary key default gen_random_uuid(),
-  nome text not null,
-  tipo text not null default 'dias', -- 'dias' | 'meses'
-  parcelas jsonb not null default '[]'::jsonb, -- ex: [30,60,90] (dias) ou [1,2,3] (meses)
-  ativo boolean default true,
+  nome text not null,                          -- descrição da condição
+  tipo text not null default 'dias',           -- 'dias' | 'meses'
+  parcelas jsonb not null default '[]'::jsonb,  -- ex: [30,60,90] (dias) ou [1,2,3] (meses)
+  codigo int,                                  -- código da condição
+  parcelas_manuais boolean default false,      -- parcelas informadas manualmente
+  prazo_maximo int,                            -- prazo máximo da parcela (dias)
+  num_parcelas int,                            -- nº de parcelas
+  prazo_entre int,                             -- prazo entre parcelas (dias)
+  primeira_a_vista boolean default false,      -- 1ª parcela à vista
+  tipo_juros text default 'Juros Simples',
+  formas jsonb default '[]'::jsonb,            -- formas permitidas: cheque/cartao/boleto/carteira/transferencia
+  prazo_medio numeric(10,2),                   -- prazo médio (dias)
+  ativo boolean default true,                  -- inativa = not ativo
   criado_em timestamptz default now()
 );
 
@@ -84,6 +93,7 @@ create table if not exists orcamento_itens (
   orcamento_id uuid references orcamentos(id) on delete cascade,
   produto_id uuid references produtos(id),
   descricao text not null,
+  unidade text,
   quantidade numeric(12,2) not null default 1,
   preco_unit numeric(12,2) not null default 0,
   subtotal numeric(12,2) not null default 0
