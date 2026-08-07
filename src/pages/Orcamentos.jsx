@@ -394,6 +394,17 @@ function ModalDetalhe({ orcamento, vendedor, toast, onClose, onMudou }) {
     return true
   }
 
+  async function excluir() {
+    if (!window.confirm(`Excluir o orçamento Nº${orcamento.numero}? Esta ação não pode ser desfeita.`)) return
+    setOcupado(true)
+    const { error } = await supabase.from('orcamentos').delete().eq('id', orcamento.id)
+    setOcupado(false)
+    if (error) { toast('Erro ao excluir'); return }
+    toast('Orçamento excluído')
+    onMudou()
+    onClose()
+  }
+
   async function enviarWhatsapp() {
     setOcupado(true)
     try {
@@ -498,6 +509,12 @@ function ModalDetalhe({ orcamento, vendedor, toast, onClose, onMudou }) {
               disabled={ocupado || status === 'perdido'}
             >
               ✖ Perdido
+            </button>
+          </div>
+
+          <div className="row mt">
+            <button className="btn btn-outline grow" onClick={excluir} disabled={ocupado} style={{ color: '#c0392b', borderColor: '#e6b0aa' }}>
+              🗑 Excluir orçamento
             </button>
           </div>
         </>
