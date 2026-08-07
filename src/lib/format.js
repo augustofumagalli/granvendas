@@ -13,6 +13,27 @@ export const hoje = () => new Date().toISOString().slice(0, 10)
 
 export const soDigitos = (s) => String(s || '').replace(/\D/g, '')
 
+// minúsculas sem acento (para buscas)
+export const semAcento = (s) =>
+  String(s ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+
+// Busca com "%" como curinga: cada trecho separado por % precisa aparecer, em ordem.
+// Ex.: "tubo%inox%50" casa com "TUBO RDD INOX 304 - 50,80MM".
+export function combinaCuringa(texto, consulta) {
+  const t = semAcento(texto)
+  const q = semAcento(consulta).trim()
+  if (!q) return true
+  const partes = q.split('%').map((p) => p.trim()).filter(Boolean)
+  if (!partes.length) return true // consulta só com "%"
+  let i = 0
+  for (const parte of partes) {
+    const pos = t.indexOf(parte, i)
+    if (pos < 0) return false
+    i = pos + parte.length
+  }
+  return true
+}
+
 export const formataCNPJ = (v) => {
   const d = soDigitos(v).slice(0, 14)
   return d
