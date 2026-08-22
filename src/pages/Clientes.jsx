@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import Modal from '../components/Modal'
+import ImportarClientes from '../components/ImportarClientes'
 import { soDigitos, formataCNPJ, formataTelefone } from '../lib/format'
 import { pegarPosicao } from '../lib/geo'
 
@@ -32,6 +33,7 @@ export default function Clientes() {
   const [busca, setBusca] = useState('')
 
   const [modalAberto, setModalAberto] = useState(false)
+  const [showImport, setShowImport] = useState(false)
   const [form, setForm] = useState(VAZIO)
   const [editandoId, setEditandoId] = useState(null)
   const [buscandoCnpj, setBuscandoCnpj] = useState(false)
@@ -199,7 +201,10 @@ export default function Clientes() {
     <div>
       <div className="between mb">
         <div className="section-title">Clientes</div>
-        <button className="btn btn-azul btn-sm" onClick={abrirNovo}>+ Novo cliente</button>
+        <div className="row">
+          <button className="btn btn-outline btn-sm" onClick={() => setShowImport(true)}>Importar</button>
+          <button className="btn btn-azul btn-sm" onClick={abrirNovo}>+ Novo cliente</button>
+        </div>
       </div>
 
       <div className="field mb">
@@ -231,6 +236,18 @@ export default function Clientes() {
             </div>
           </div>
         ))
+      )}
+
+      {showImport && (
+        <Modal titulo="Importar clientes" onClose={() => setShowImport(false)}>
+          <ImportarClientes
+            onClose={() => setShowImport(false)}
+            onConcluido={() => {
+              setShowImport(false)
+              carregar()
+            }}
+          />
+        </Modal>
       )}
 
       {modalAberto && (
