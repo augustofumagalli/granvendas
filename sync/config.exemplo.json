@@ -7,8 +7,7 @@
     "usuario": "SYSDBA",
     "senha": "masterkey"
   },
-  "listaPrecoVista": null,
-  "listaPrecoPrazo": null,
+  "listaPreco": 5,
   "supabase": {
     "url": "https://SEU-PROJETO.supabase.co",
     "anonKey": "COLE_AQUI_A_VITE_SUPABASE_ANON_KEY_DO_.ENV",

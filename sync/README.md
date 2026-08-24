@@ -43,7 +43,10 @@ que já está preenchido no app (GPS, observação etc.).
    - `supabase.url` e `supabase.anonKey`: os mesmos do `.env` do app (`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`);
    - `supabase.email` / `supabase.senha`: um login válido do GranVendas (o script entra como esse usuário).
 2. Descubra as listas de preço: `node sincronizar.js --listas` e preencha
-   `listaPrecoVista` / `listaPrecoPrazo` no config com os códigos certos.
+   `listaPreco` no config com o código da lista usada nos orçamentos
+   (na Grantubos: 5 = VAREJO CNPJ; linha 1 = a prazo, linha 2 = à vista).
+   `node sincronizar.js --precos CODIGO` mostra todos os preços de um
+   produto para conferir.
 3. Ensaio sem gravar nada: `node sincronizar.js --teste`
 4. Valendo: `node sincronizar.js` (ou `--so-clientes` / `--so-produtos`)
 

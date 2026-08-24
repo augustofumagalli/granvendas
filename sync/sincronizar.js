@@ -117,11 +117,13 @@ function mapearCliente(c) {
 
 const CAMPOS_PRODUTO = ['descricao', 'unidade', 'preco', 'preco_vista', 'preco_prazo', 'margem_vista', 'margem_prazo', 'estoque', 'ativo']
 
-function mapearProduto(p, precoVista, precoPrazo) {
-  const pv = precoVista.get(p.CODPRODUTO)
-  const pp = precoPrazo.get(p.CODPRODUTO)
-  const preco_vista = pv?.preco ?? num(p.PRECOVAREJO)
-  const preco_prazo = pp?.preco ?? null
+// Na tela do SiSCom cada lista tem duas linhas de preço:
+// linha 1 = PRECOLISTA/MARGEMLISTA (o "a prazo" da Grantubos)
+// linha 2 = PRECOMIN/MARGEMMIN (o "à vista", mais barato)
+function mapearProduto(p, precos) {
+  const pr = precos.get(p.CODPRODUTO)
+  const preco_vista = pr?.precoVista ?? null
+  const preco_prazo = pr?.precoPrazo ?? null
   return {
     codigo: String(p.CODPRODUTO),
     descricao: txt(p.DESCRICAO) || String(p.CODPRODUTO),
@@ -129,8 +131,8 @@ function mapearProduto(p, precoVista, precoPrazo) {
     preco: preco_vista ?? preco_prazo ?? 0,
     preco_vista,
     preco_prazo,
-    margem_vista: pv?.margem ?? num(p.MARGEMVAREJO),
-    margem_prazo: pp?.margem ?? null,
+    margem_vista: pr?.margemVista ?? null,
+    margem_prazo: pr?.margemPrazo ?? null,
     estoque: num(p.SALDO_ESTOQUE) ?? 0,
     ativo: !Number(p.INATIVO),
   }
@@ -176,7 +178,7 @@ async function main() {
           `  código ${l.CODLISTAPRECO}: ${String(l.NOMELISTAPRECO || '').trim()} — ${String(l.DESCLISTAPRECO || '').trim()} (${l.QTDPRODUTOS} produtos com preço)`
         )
       )
-      console.log('\nPreencha no config.json: "listaPrecoVista" e "listaPrecoPrazo" com os códigos certos.')
+      console.log('\nPreencha no config.json: "listaPreco" com o código da lista usada nos orçamentos (linha 1 = a prazo, linha 2 = à vista).')
       return
     }
 
@@ -273,7 +275,7 @@ async function main() {
       console.log('Lendo produtos do SiSCom...')
       const rows = await query(
         db,
-        `SELECT P.CODPRODUTO, P.DESCRICAO, P.UNIDADE, P.PRECOVAREJO, P.MARGEMVAREJO, P.INATIVO,
+        `SELECT P.CODPRODUTO, P.DESCRICAO, P.UNIDADE, P.INATIVO,
                 S.SALDO_ESTOQUE
            FROM TCADPRODUTO P
            LEFT JOIN TBSALDOATUAL S ON S.CODEMPRESA = P.CODEMPRESA AND S.CODPRODUTO = P.CODPRODUTO
@@ -281,29 +283,27 @@ async function main() {
         [EMPRESA]
       )
 
-      const lerLista = async (codLista) => {
-        const m = new Map()
-        if (codLista == null) return m
-        const precos = await query(
+      const precos = new Map()
+      if (cfg.listaPreco == null) {
+        console.log('Aviso: "listaPreco" não configurada no config.json — preços não serão atualizados. Rode --listas para descobrir o código.')
+      } else {
+        const linhas = await query(
           db,
-          `SELECT CODPRODUTO, PRECOLISTA, MARGEMLISTA FROM TBPRODUTOPRECO
+          `SELECT CODPRODUTO, PRECOLISTA, MARGEMLISTA, PRECOMIN, MARGEMMIN FROM TBPRODUTOPRECO
             WHERE CODEMPRESA = ? AND CODLISTA = ?`,
-          [EMPRESA, codLista]
+          [EMPRESA, cfg.listaPreco]
         )
-        precos.forEach((p) => {
-          const preco = num(p.PRECOLISTA)
-          if (preco) m.set(p.CODPRODUTO, { preco, margem: num(p.MARGEMLISTA) })
+        linhas.forEach((p) => {
+          precos.set(p.CODPRODUTO, {
+            precoPrazo: num(p.PRECOLISTA) || null,
+            margemPrazo: num(p.MARGEMLISTA),
+            precoVista: num(p.PRECOMIN) || null,
+            margemVista: num(p.MARGEMMIN),
+          })
         })
-        return m
       }
-      const precoVista = await lerLista(cfg.listaPrecoVista)
-      const precoPrazo = await lerLista(cfg.listaPrecoPrazo)
-      if (cfg.listaPrecoVista == null)
-        console.log('Aviso: "listaPrecoVista" não configurada — usando PRECOVAREJO do cadastro como preço à vista.')
-      if (cfg.listaPrecoPrazo == null)
-        console.log('Aviso: "listaPrecoPrazo" não configurada — preço a prazo não será atualizado.')
 
-      const doSiscom = rows.map((p) => mapearProduto(p, precoVista, precoPrazo))
+      const doSiscom = rows.map((p) => mapearProduto(p, precos))
       const existentes = await supaGetTudo(`produtos?select=codigo,${CAMPOS_PRODUTO.join(',')}`, sessao)
       const mapaApp = new Map(existentes.map((p) => [String(p.codigo).trim(), p]))
 
