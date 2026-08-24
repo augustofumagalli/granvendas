@@ -180,6 +180,44 @@ async function main() {
       return
     }
 
+    if (tem('--precos')) {
+      const cod = Number(args[args.indexOf('--precos') + 1])
+      if (!cod) {
+        console.log('Uso: node sincronizar.js --precos CODIGO_DO_PRODUTO')
+        return
+      }
+      const prod = await query(
+        db,
+        `SELECT CODPRODUTO, DESCRICAO, CUSTOLIQ, PRECOVAREJO, MARGEMVAREJO,
+                PRECOMINIMO, MARGEMMINIMO, PRECOREVENDA, MARGEMREVENDA
+           FROM TCADPRODUTO WHERE CODEMPRESA = ? AND CODPRODUTO = ?`,
+        [EMPRESA, cod]
+      )
+      if (!prod.length) {
+        console.log('Produto ' + cod + ' não encontrado.')
+        return
+      }
+      const p = prod[0]
+      console.log(`Produto ${p.CODPRODUTO}: ${String(p.DESCRICAO || '').trim()}`)
+      console.log(`  cadastro: custo liq ${p.CUSTOLIQ} | varejo ${p.PRECOVAREJO} (${p.MARGEMVAREJO}%) | minimo ${p.PRECOMINIMO} (${p.MARGEMMINIMO}%) | revenda ${p.PRECOREVENDA} (${p.MARGEMREVENDA}%)`)
+      const listas = await query(
+        db,
+        `SELECT L.CODLISTAPRECO, L.NOMELISTAPRECO,
+                P.MARGEMLISTA, P.PRECOLISTA, P.MARGEMMIN, P.PRECOMIN, P.MARGEMMIN2, P.PRECOMIN2
+           FROM TBPRODUTOPRECO P
+           JOIN TBCADLISTAPRECO L ON L.CODEMPRESA = P.CODEMPRESA AND L.CODLISTAPRECO = P.CODLISTA
+          WHERE P.CODEMPRESA = ? AND P.CODPRODUTO = ? ORDER BY 1`,
+        [EMPRESA, cod]
+      )
+      listas.forEach((l) =>
+        console.log(
+          `  lista ${l.CODLISTAPRECO} ${String(l.NOMELISTAPRECO || '').trim()}: ` +
+            `PRECOLISTA ${l.PRECOLISTA} (${l.MARGEMLISTA}%) | PRECOMIN ${l.PRECOMIN} (${l.MARGEMMIN}%) | PRECOMIN2 ${l.PRECOMIN2} (${l.MARGEMMIN2}%)`
+        )
+      )
+      return
+    }
+
     console.log('Conectando no Supabase...')
     const sessao = await supaLogin()
 
