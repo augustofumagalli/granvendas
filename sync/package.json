@@ -1,0 +1,13 @@
+{
+  "name": "granvendas-sync",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Agente de sincronização SiSCom (Firebird) -> GranVendas (Supabase). Roda num PC da empresa.",
+  "type": "commonjs",
+  "scripts": {
+    "descobrir": "node descobrir-schema.js"
+  },
+  "dependencies": {
+    "node-firebird": "^1.1.9"
+  }
+}
