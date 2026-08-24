@@ -31,11 +31,33 @@ Para espiar o conteúdo de uma tabela (mostra 5 linhas só no console):
 node descobrir-schema.js --host gransalus --db "C:\Siscom\DADOS.FDB" --amostra CLIENTES
 ```
 
-## Passo 2 — script de sincronização (próximo)
+## Passo 2 — sincronizar (`sincronizar.js`)
 
-Com o schema em mãos, entra aqui o `sincronizar.js`: lê clientes e produtos do
-Firebird e faz upsert no Supabase (clientes por CNPJ, produtos por código),
-agendável no Agendador de Tarefas do Windows.
+Lê `TCADCLIENTE` (clientes), `TCADPRODUTO` + `TBSALDOATUAL` (produtos/estoque)
+e `TBPRODUTOPRECO` (listas de preço) do Firebird e faz upsert no Supabase:
+clientes por CNPJ, produtos por código. Campos vazios no SiSCom não apagam o
+que já está preenchido no app (GPS, observação etc.).
+
+1. Copie `config.exemplo.json` para `config.json` e preencha:
+   - `firebird`: já vem com host/banco da Grantubos (`SERVISOFT`, `D:\Siscom\TabelasAds\DBSISCOM.FDB`);
+   - `supabase.url` e `supabase.anonKey`: os mesmos do `.env` do app (`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`);
+   - `supabase.email` / `supabase.senha`: um login válido do GranVendas (o script entra como esse usuário).
+2. Descubra as listas de preço: `node sincronizar.js --listas` e preencha
+   `listaPrecoVista` / `listaPrecoPrazo` no config com os códigos certos.
+3. Ensaio sem gravar nada: `node sincronizar.js --teste`
+4. Valendo: `node sincronizar.js` (ou `--so-clientes` / `--so-produtos`)
+
+Observações:
+- Clientes pessoa física (CPF) e sem CNPJ ficam de fora por enquanto (o app
+  exige CNPJ de 14 dígitos); o script mostra quantos foram pulados.
+- Clientes inativos no SiSCom não são enviados; produtos inativos são enviados
+  com `ativo = false` (somem da venda sem sumir do histórico).
+
+### Agendar no Windows (opcional)
+
+Agendador de Tarefas → Criar tarefa básica → diária (ou no logon) → Ação
+"Iniciar um programa": programa `node`, argumentos `sincronizar.js`,
+iniciar em `C:\Users\Granfer\Documents\granvendas\sync`.
 
 ## Alternativa a investigar: API do SiSCom
 
