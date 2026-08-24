@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
-import { soDigitos, formataCNPJ } from '../lib/format'
+import { soDigitos, formataCpfCnpj } from '../lib/format'
 
 // remove acentos + minúsculas para comparar cabeçalhos
 const norm = (s) =>
@@ -18,7 +18,7 @@ const norm = (s) =>
 const CAMPOS = ['cnpj', 'nome_fantasia', 'razao_social', 'telefone', 'email', 'logradouro', 'numero', 'bairro', 'municipio', 'uf', 'cep']
 
 const ROTULO = {
-  cnpj: 'CNPJ',
+  cnpj: 'CNPJ/CPF',
   razao_social: 'Razão social',
   nome_fantasia: 'Nome fantasia',
   telefone: 'Telefone',
@@ -74,7 +74,7 @@ function montarLinhas(matriz, idx) {
     const fantasia = col(row, 'nome_fantasia')
     if (!razao && !fantasia) continue
     const cnpj = soDigitos(col(row, 'cnpj'))
-    if (cnpj.length !== 14) { semCnpj++; continue }
+    if (cnpj.length !== 14 && cnpj.length !== 11) { semCnpj++; continue }
     out.push({
       cnpj,
       razao_social: razao || fantasia,
@@ -304,7 +304,7 @@ export default function ImportarClientes({ onClose, onConcluido }) {
           )}
           {semCnpj > 0 && (
             <p className="muted mb" style={{ fontSize: 12 }}>
-              ⚠️ {semCnpj} linha(s) ignorada(s) por CNPJ ausente ou inválido.
+              ⚠️ {semCnpj} linha(s) ignorada(s) por CNPJ/CPF ausente ou inválido.
             </p>
           )}
           <div style={{ overflowX: 'auto', maxHeight: '40vh', overflowY: 'auto' }}>
@@ -323,7 +323,7 @@ export default function ImportarClientes({ onClose, onConcluido }) {
                   const sit = situacao(l)
                   return (
                     <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
-                      <td className="mono" style={{ padding: '6px 8px' }}>{formataCNPJ(l.cnpj)}</td>
+                      <td className="mono" style={{ padding: '6px 8px' }}>{formataCpfCnpj(l.cnpj)}</td>
                       <td style={{ padding: '6px 8px' }}>{l.razao_social}</td>
                       <td style={{ padding: '6px 8px' }}>{l.nome_fantasia || '—'}</td>
                       <td style={{ padding: '6px 8px' }}>{l.municipio || '—'}{l.uf ? `/${l.uf}` : ''}</td>

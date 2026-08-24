@@ -80,8 +80,15 @@ async function supa(rota, metodo, sessao, body) {
   if (metodo === 'GET') return r.json()
 }
 
+// o Supabase devolve no máximo 1000 linhas por consulta -> paginar
 async function supaGetTudo(rota, sessao) {
-  return supa(`${rota}&limit=100000`, 'GET', sessao)
+  const tudo = []
+  for (let offset = 0; ; offset += 1000) {
+    const pagina = await supa(`${rota}&limit=1000&offset=${offset}`, 'GET', sessao)
+    tudo.push(...pagina)
+    if (pagina.length < 1000) break
+  }
+  return tudo
 }
 
 async function emLotes(itens, tamanho, fn) {
@@ -94,7 +101,7 @@ const CAMPOS_CLIENTE = ['razao_social', 'nome_fantasia', 'telefone', 'email', 'l
 
 function mapearCliente(c) {
   const cnpj = soDigitos(c.CNPJCPF)
-  if (cnpj.length !== 14) return null // pessoa física (CPF) ou sem documento: fora por enquanto
+  if (cnpj.length !== 14 && cnpj.length !== 11) return null // sem CNPJ/CPF válido
   const fone =
     soDigitos(String(c.DDD_FONE ?? '') + String(c.FONE ?? '')) ||
     soDigitos(String(c.DDD_CELULAR ?? '') + String(c.CELULAR ?? '')) ||
@@ -115,13 +122,14 @@ function mapearCliente(c) {
   }
 }
 
-const CAMPOS_PRODUTO = ['descricao', 'unidade', 'preco', 'preco_vista', 'preco_prazo', 'margem_vista', 'margem_prazo', 'estoque', 'ativo']
+const CAMPOS_PRODUTO = ['descricao', 'unidade', 'preco', 'preco_vista', 'preco_prazo', 'margem_vista', 'margem_prazo', 'preco_revenda_vista', 'preco_revenda_prazo', 'estoque', 'ativo']
 
 // Na tela do SiSCom cada lista tem duas linhas de preço:
 // linha 1 = PRECOLISTA/MARGEMLISTA (o "a prazo" da Grantubos)
 // linha 2 = PRECOMIN/MARGEMMIN (o "à vista", mais barato)
-function mapearProduto(p, precos) {
+function mapearProduto(p, precos, precosRevenda) {
   const pr = precos.get(p.CODPRODUTO)
+  const rev = precosRevenda.get(p.CODPRODUTO)
   const preco_vista = pr?.precoVista ?? null
   const preco_prazo = pr?.precoPrazo ?? null
   return {
@@ -133,6 +141,8 @@ function mapearProduto(p, precos) {
     preco_prazo,
     margem_vista: pr?.margemVista ?? null,
     margem_prazo: pr?.margemPrazo ?? null,
+    preco_revenda_vista: rev?.precoVista ?? null,
+    preco_revenda_prazo: rev?.precoPrazo ?? null,
     estoque: num(p.SALDO_ESTOQUE) ?? 0,
     ativo: !Number(p.INATIVO),
   }
@@ -258,7 +268,7 @@ async function main() {
 
       console.log(
         `Clientes: ${porCnpj.size} no SiSCom | ${novos.length} novos | ${atualizar.length} para atualizar | ` +
-          `${semCnpj} sem CNPJ válido (CPF/em branco) | ${duplicados} CNPJs repetidos ignorados`
+          `${semCnpj} sem CNPJ/CPF válido | ${duplicados} documentos repetidos ignorados`
       )
       if (TESTE) {
         novos.slice(0, 3).forEach((c) => console.log('  novo:', c.cnpj, '-', c.razao_social))
@@ -283,27 +293,32 @@ async function main() {
         [EMPRESA]
       )
 
-      const precos = new Map()
-      if (cfg.listaPreco == null) {
-        console.log('Aviso: "listaPreco" não configurada no config.json — preços não serão atualizados. Rode --listas para descobrir o código.')
-      } else {
+      const lerLista = async (codLista) => {
+        const m = new Map()
+        if (codLista == null) return m
         const linhas = await query(
           db,
           `SELECT CODPRODUTO, PRECOLISTA, MARGEMLISTA, PRECOMIN, MARGEMMIN FROM TBPRODUTOPRECO
             WHERE CODEMPRESA = ? AND CODLISTA = ?`,
-          [EMPRESA, cfg.listaPreco]
+          [EMPRESA, codLista]
         )
         linhas.forEach((p) => {
-          precos.set(p.CODPRODUTO, {
+          m.set(p.CODPRODUTO, {
             precoPrazo: num(p.PRECOLISTA) || null,
             margemPrazo: num(p.MARGEMLISTA),
             precoVista: num(p.PRECOMIN) || null,
             margemVista: num(p.MARGEMMIN),
           })
         })
+        return m
       }
+      if (cfg.listaPreco == null)
+        console.log('Aviso: "listaPreco" não configurada no config.json — preços não serão atualizados. Rode --listas para descobrir o código.')
+      const precos = await lerLista(cfg.listaPreco)
+      // lista REVENDA: piso para descontos maiores (padrão 4 na Grantubos; null desliga)
+      const precosRevenda = await lerLista('listaPrecoRevenda' in cfg ? cfg.listaPrecoRevenda : 4)
 
-      const doSiscom = rows.map((p) => mapearProduto(p, precos))
+      const doSiscom = rows.map((p) => mapearProduto(p, precos, precosRevenda))
       const existentes = await supaGetTudo(`produtos?select=codigo,${CAMPOS_PRODUTO.join(',')}`, sessao)
       const mapaApp = new Map(existentes.map((p) => [String(p.codigo).trim(), p]))
 

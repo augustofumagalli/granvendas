@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import Modal from '../components/Modal'
 import ImportarClientes from '../components/ImportarClientes'
-import { soDigitos, formataCNPJ, formataTelefone } from '../lib/format'
+import { soDigitos, formataCpfCnpj, formataTelefone } from '../lib/format'
 import { pegarPosicao } from '../lib/geo'
 
 const VAZIO = {
@@ -102,7 +102,7 @@ export default function Clientes() {
   async function buscarCnpj() {
     const digitos = soDigitos(form.cnpj)
     if (digitos.length !== 14) {
-      toast('Informe um CNPJ com 14 dígitos')
+      toast('A busca automática só funciona para CNPJ (14 dígitos)')
       return
     }
     setBuscandoCnpj(true)
@@ -148,8 +148,8 @@ export default function Clientes() {
 
   async function salvar() {
     const digitos = soDigitos(form.cnpj)
-    if (digitos.length !== 14) {
-      toast('Informe um CNPJ com 14 dígitos')
+    if (digitos.length !== 14 && digitos.length !== 11) {
+      toast('Informe um CNPJ (14 dígitos) ou CPF (11 dígitos)')
       return
     }
     if (!form.razao_social.trim()) {
@@ -186,7 +186,7 @@ export default function Clientes() {
     setSalvando(false)
     if (error) {
       if (error.code === '23505' || /duplicate|unique/i.test(error.message || '')) {
-        toast('Já existe um cliente com este CNPJ')
+        toast('Já existe um cliente com este CNPJ/CPF')
       } else {
         toast('Erro ao salvar cliente')
       }
@@ -253,14 +253,14 @@ export default function Clientes() {
       {modalAberto && (
         <Modal titulo={editandoId ? 'Editar cliente' : 'Novo cliente'} onClose={fechar}>
           <div className="field">
-            <label>CNPJ</label>
+            <label>CNPJ / CPF</label>
             <div className="row">
               <input
                 className="grow mono"
                 type="text"
                 inputMode="numeric"
-                placeholder="00.000.000/0000-00"
-                value={formataCNPJ(form.cnpj)}
+                placeholder="00.000.000/0000-00 ou 000.000.000-00"
+                value={formataCpfCnpj(form.cnpj)}
                 onChange={(e) => set('cnpj', soDigitos(e.target.value))}
                 disabled={!!editandoId}
               />

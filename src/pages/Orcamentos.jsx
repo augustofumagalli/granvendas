@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import Modal from '../components/Modal'
-import { brl, numero, data, soDigitos, combinaCuringa, formataTelefone, formataCNPJ } from '../lib/format'
+import { brl, numero, data, soDigitos, curingaParaIlike, formataTelefone, formataCpfCnpj } from '../lib/format'
 
 const STATUS_FILTROS = [
   { valor: 'todos', label: 'Todos' },
@@ -29,7 +29,6 @@ export default function Orcamentos() {
   const [filtro, setFiltro] = useState('todos')
 
   const [clientes, setClientes] = useState([])
-  const [produtos, setProdutos] = useState([])
   const [condicoes, setCondicoes] = useState([])
 
   const [modalNovo, setModalNovo] = useState(false)
@@ -53,14 +52,14 @@ export default function Orcamentos() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
 
+  // produtos não são pré-carregados: a busca é feita no servidor dentro do modal
+  // (o Supabase devolve no máximo 1000 linhas, e o catálogo inteiro passa disso)
   async function carregarAuxiliares() {
-    const [rCli, rProd, rCond] = await Promise.all([
+    const [rCli, rCond] = await Promise.all([
       supabase.from('clientes').select('*').order('razao_social', { ascending: true }),
-      supabase.from('produtos').select('*').eq('ativo', true).order('descricao', { ascending: true }),
       supabase.from('condicoes_pagamento').select('*').eq('ativo', true).order('criado_em', { ascending: true }),
     ])
     setClientes(rCli.data || [])
-    setProdutos(rProd.data || [])
     setCondicoes(rCond.data || [])
   }
 
@@ -128,7 +127,6 @@ export default function Orcamentos() {
         <ModalNovo
           user={user}
           clientes={clientes}
-          produtos={produtos}
           condicoes={condicoes}
           orcamentoExistente={editando}
           recarregarAux={carregarAuxiliares}
@@ -152,7 +150,7 @@ export default function Orcamentos() {
   )
 }
 
-function ModalNovo({ user, clientes, produtos, condicoes, orcamentoExistente, recarregarAux, toast, onClose, onSalvo }) {
+function ModalNovo({ user, clientes, condicoes, orcamentoExistente, recarregarAux, toast, onClose, onSalvo }) {
   const edicao = !!orcamentoExistente
   const [clienteId, setClienteId] = useState(orcamentoExistente?.cliente_id || '')
   const [itens, setItens] = useState([])
@@ -166,14 +164,37 @@ function ModalNovo({ user, clientes, produtos, condicoes, orcamentoExistente, re
   const [clientesExtra, setClientesExtra] = useState([])
   const [produtosExtra, setProdutosExtra] = useState([])
   const todosClientes = [...clientesExtra, ...clientes]
-  const todosProdutos = [...produtosExtra, ...produtos]
 
-  // form de item
+  // form de item — a busca de produto roda no servidor, com % como curinga
   const [buscaProd, setBuscaProd] = useState('')
+  const [resultadosProd, setResultadosProd] = useState([])
+  const [buscandoProd, setBuscandoProd] = useState(false)
   const [produtoId, setProdutoId] = useState('')
   const [qtd, setQtd] = useState(1)
   const [preco, setPreco] = useState(0)
   const [unidade, setUnidade] = useState('')
+
+  const todosProdutos = [...produtosExtra, ...resultadosProd.filter((r) => !produtosExtra.some((e) => e.id === r.id))]
+
+  useEffect(() => {
+    const padrao = curingaParaIlike(buscaProd)
+    if (!padrao) { setResultadosProd([]); setBuscandoProd(false); return }
+    let vivo = true
+    setBuscandoProd(true)
+    const t = setTimeout(async () => {
+      const { data } = await supabase
+        .from('produtos')
+        .select('id,codigo,descricao,unidade,preco,preco_vista,preco_prazo,preco_revenda_vista,preco_revenda_prazo,estoque')
+        .eq('ativo', true)
+        .or(`descricao.ilike."${padrao}",codigo.ilike."${padrao}"`)
+        .order('descricao')
+        .limit(50)
+      if (!vivo) return
+      setResultadosProd(data || [])
+      setBuscandoProd(false)
+    }, 300)
+    return () => { vivo = false; clearTimeout(t) }
+  }, [buscaProd])
 
   // cadastro rápido
   const [novoCliente, setNovoCliente] = useState(false)
@@ -199,9 +220,8 @@ function ModalNovo({ user, clientes, produtos, condicoes, orcamentoExistente, re
     return () => { vivo = false }
   }, [edicao, orcamentoExistente])
 
-  const produtosFiltrados = todosProdutos
-    .filter((p) => combinaCuringa(`${p.codigo || ''} ${p.descricao || ''}`, buscaProd))
-    .slice(0, 50)
+  const produtosFiltrados = todosProdutos.slice(0, 50)
+  const produtoSel = todosProdutos.find((x) => x.id === produtoId)
 
   function aoEscolherProduto(id) {
     setProdutoId(id)
@@ -318,9 +338,12 @@ function ModalNovo({ user, clientes, produtos, condicoes, orcamentoExistente, re
       </div>
 
       <div className="field">
-        <label>Produto{buscaProd ? ` (${produtosFiltrados.length})` : ''}</label>
+        <label>
+          Produto
+          {buscandoProd ? ' (buscando…)' : buscaProd ? ` (${produtosFiltrados.length}${produtosFiltrados.length === 50 ? '+' : ''})` : ''}
+        </label>
         <select value={produtoId} onChange={(e) => aoEscolherProduto(e.target.value)}>
-          <option value="">Selecione…</option>
+          <option value="">{buscaProd ? 'Selecione…' : 'Digite acima para buscar…'}</option>
           {produtosFiltrados.map((p) => (
             <option key={p.id} value={p.id}>
               {p.codigo ? p.codigo + ' · ' : ''}{p.descricao} — {brl(p.preco)}
@@ -328,6 +351,29 @@ function ModalNovo({ user, clientes, produtos, condicoes, orcamentoExistente, re
           ))}
         </select>
       </div>
+
+      {produtoSel && (
+        <div className="row mb" style={{ flexWrap: 'wrap', gap: 6 }}>
+          {[
+            ['À vista', produtoSel.preco_vista ?? produtoSel.preco],
+            ['A prazo', produtoSel.preco_prazo],
+            ['Revenda à vista', produtoSel.preco_revenda_vista],
+            ['Revenda a prazo', produtoSel.preco_revenda_prazo],
+          ]
+            .filter(([, v]) => v != null)
+            .map(([rotulo, valor]) => (
+              <button
+                key={rotulo}
+                type="button"
+                className={'badge ' + (Number(preco) === Number(valor) ? 'badge-azul' : 'badge-cinza')}
+                style={{ cursor: 'pointer', border: 'none' }}
+                onClick={() => setPreco(Number(valor))}
+              >
+                {rotulo} {brl(valor)}
+              </button>
+            ))}
+        </div>
+      )}
 
       <div className="row">
         <div className="field grow">
@@ -446,7 +492,7 @@ function QuickCliente({ user, toast, onClose, onCriado }) {
     const { data, error } = await supabase
       .from('clientes')
       .insert({
-        cnpj: digitos.length === 14 ? digitos : null,
+        cnpj: digitos.length === 14 || digitos.length === 11 ? digitos : null,
         razao_social: razao.trim(),
         nome_fantasia: fantasia.trim() || null,
         telefone: telefone ? soDigitos(telefone) : null,
@@ -479,8 +525,8 @@ function QuickCliente({ user, toast, onClose, onCriado }) {
           <input inputMode="numeric" value={formataTelefone(telefone)} onChange={(e) => setTelefone(soDigitos(e.target.value))} />
         </div>
         <div className="field grow">
-          <label>CNPJ (opcional)</label>
-          <input inputMode="numeric" value={formataCNPJ(cnpj)} onChange={(e) => setCnpj(soDigitos(e.target.value))} />
+          <label>CNPJ / CPF (opcional)</label>
+          <input inputMode="numeric" value={formataCpfCnpj(cnpj)} onChange={(e) => setCnpj(soDigitos(e.target.value))} />
         </div>
       </div>
       <div className="muted">Para o cadastro completo (endereço, busca por CNPJ), use a aba Clientes.</div>

@@ -58,9 +58,11 @@ Observações:
 
 ### Agendar no Windows (opcional)
 
-Agendador de Tarefas → Criar tarefa básica → diária (ou no logon) → Ação
-"Iniciar um programa": programa `node`, argumentos `sincronizar.js`,
-iniciar em `C:\Users\Granfer\Documents\granvendas\sync`.
+Dê **duplo clique em `agendar.bat`** (uma vez só): cria a tarefa
+"GranVendas Sincronizacao", que roda todo dia às 07:00 no PC ligado.
+Cada rodada fica registrada em `sincronizacao.log`. Para mudar o horário,
+edite o `/ST 07:00` dentro do `agendar.bat` e rode de novo; para remover:
+`schtasks /Delete /TN "GranVendas Sincronizacao"`.
 
 ## Alternativa a investigar: API do SiSCom
 
