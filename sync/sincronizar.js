@@ -191,7 +191,13 @@ function mesclar(chaveNome, chaveValor, novo, existente, campos) {
 // ---------- execução ----------
 
 async function main() {
+  console.log(`Conectando no SiSCom (Firebird em ${fbOpts.host})...`)
+  const aviso = setTimeout(() => {
+    console.log(`Ainda tentando... o servidor ${fbOpts.host} está acessível? (teste: o drive de rede do SiSCom abre no Explorador?)`)
+  }, 15000)
   const db = await attach()
+  clearTimeout(aviso)
+  console.log('SiSCom conectado.')
   try {
     if (tem('--listas')) {
       const listas = await query(
