@@ -33,6 +33,8 @@ create table if not exists produtos (
   margem_prazo numeric(6,2),              -- margem/markup do a prazo em % (MG %)
   preco_revenda_vista numeric(12,2),      -- lista REVENDA (piso p/ descontos maiores) à vista
   preco_revenda_prazo numeric(12,2),      -- lista REVENDA a prazo
+  margem_revenda_vista numeric(6,2),      -- MG % da lista REVENDA à vista
+  margem_revenda_prazo numeric(6,2),      -- MG % da lista REVENDA a prazo
   estoque numeric(12,2) not null default 0,
   ativo boolean default true,
   atualizado_em timestamptz default now()
