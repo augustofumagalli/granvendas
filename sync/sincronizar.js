@@ -139,7 +139,7 @@ function ultimoSaldo(movsDoUltimoDia) {
   return melhor
 }
 
-const CAMPOS_PRODUTO = ['descricao', 'unidade', 'preco', 'preco_vista', 'preco_prazo', 'margem_vista', 'margem_prazo', 'preco_revenda_vista', 'preco_revenda_prazo', 'estoque', 'ativo']
+const CAMPOS_PRODUTO = ['descricao', 'unidade', 'preco', 'preco_vista', 'preco_prazo', 'margem_vista', 'margem_prazo', 'preco_revenda_vista', 'preco_revenda_prazo', 'margem_revenda_vista', 'margem_revenda_prazo', 'estoque', 'ativo']
 
 // Na tela do SiSCom cada lista tem duas linhas de preço:
 // linha 1 = PRECOLISTA/MARGEMLISTA (o "a prazo" da Grantubos)
@@ -160,6 +160,8 @@ function mapearProduto(p, precos, precosRevenda, estoqueMov) {
     margem_prazo: pr?.margemPrazo ?? null,
     preco_revenda_vista: rev?.precoVista ?? null,
     preco_revenda_prazo: rev?.precoPrazo ?? null,
+    margem_revenda_vista: rev?.margemVista ?? null,
+    margem_revenda_prazo: rev?.margemPrazo ?? null,
     estoque: estoqueMov.get(p.CODPRODUTO) ?? num(p.SALDO_ESTOQUE) ?? 0,
     ativo: !Number(p.INATIVO),
   }
@@ -217,7 +219,7 @@ async function main() {
       }
       const prod = await query(
         db,
-        `SELECT CODPRODUTO, DESCRICAO, CUSTOLIQ, PRECOVAREJO, MARGEMVAREJO,
+        `SELECT CODPRODUTO, DESCRICAO, UNIDADE, MEDIDA, EMBALAGEM, CUSTOLIQ, PRECOVAREJO, MARGEMVAREJO,
                 PRECOMINIMO, MARGEMMINIMO, PRECOREVENDA, MARGEMREVENDA
            FROM TCADPRODUTO WHERE CODEMPRESA = ? AND CODPRODUTO = ?`,
         [EMPRESA, cod]
@@ -228,6 +230,7 @@ async function main() {
       }
       const p = prod[0]
       console.log(`Produto ${p.CODPRODUTO}: ${String(p.DESCRICAO || '').trim()}`)
+      console.log(`  UNIDADE: "${String(p.UNIDADE || '').trim()}" | MEDIDA: "${String(p.MEDIDA || '').trim()}" | EMBALAGEM: "${String(p.EMBALAGEM || '').trim()}"`)
       console.log(`  cadastro: custo liq ${p.CUSTOLIQ} | varejo ${p.PRECOVAREJO} (${p.MARGEMVAREJO}%) | minimo ${p.PRECOMINIMO} (${p.MARGEMMINIMO}%) | revenda ${p.PRECOREVENDA} (${p.MARGEMREVENDA}%)`)
       const listas = await query(
         db,

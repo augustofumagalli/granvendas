@@ -52,6 +52,20 @@ export default function Orcamentos() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
 
+  // recarrega ao voltar para o app (ex.: celular que ficou em segundo plano)
+  useEffect(() => {
+    const aoVoltar = () => {
+      if (document.visibilityState === 'visible') carregar()
+    }
+    window.addEventListener('focus', aoVoltar)
+    document.addEventListener('visibilitychange', aoVoltar)
+    return () => {
+      window.removeEventListener('focus', aoVoltar)
+      document.removeEventListener('visibilitychange', aoVoltar)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user])
+
   // produtos não são pré-carregados: a busca é feita no servidor dentro do modal
   // (o Supabase devolve no máximo 1000 linhas, e o catálogo inteiro passa disso)
   async function carregarAuxiliares() {
@@ -206,7 +220,7 @@ function ModalNovo({ user, clientes, condicoes, orcamentoExistente, recarregarAu
     const t = setTimeout(async () => {
       const { data } = await supabase
         .from('produtos')
-        .select('id,codigo,descricao,unidade,preco,preco_vista,preco_prazo,preco_revenda_vista,preco_revenda_prazo,estoque')
+        .select('id,codigo,descricao,unidade,preco,preco_vista,preco_prazo,margem_vista,margem_prazo,preco_revenda_vista,preco_revenda_prazo,margem_revenda_vista,margem_revenda_prazo,estoque')
         .eq('ativo', true)
         .or(`descricao.ilike."${padrao}",codigo.ilike."${padrao}"`)
         .order('descricao')
@@ -422,13 +436,13 @@ function ModalNovo({ user, clientes, condicoes, orcamentoExistente, recarregarAu
         <>
           <div className="row mb" style={{ flexWrap: 'wrap', gap: 6 }}>
             {[
-              ['À vista', prodSel.preco_vista ?? prodSel.preco],
-              ['A prazo', prodSel.preco_prazo],
-              ['Revenda à vista', prodSel.preco_revenda_vista],
-              ['Revenda a prazo', prodSel.preco_revenda_prazo],
+              ['À vista', prodSel.preco_vista ?? prodSel.preco, prodSel.margem_vista],
+              ['A prazo', prodSel.preco_prazo, prodSel.margem_prazo],
+              ['Revenda à vista', prodSel.preco_revenda_vista, prodSel.margem_revenda_vista],
+              ['Revenda a prazo', prodSel.preco_revenda_prazo, prodSel.margem_revenda_prazo],
             ]
               .filter(([, v]) => v != null)
-              .map(([rotulo, valor]) => (
+              .map(([rotulo, valor, margem]) => (
                 <button
                   key={rotulo}
                   type="button"
@@ -436,7 +450,7 @@ function ModalNovo({ user, clientes, condicoes, orcamentoExistente, recarregarAu
                   style={{ cursor: 'pointer', border: 'none' }}
                   onClick={() => setPreco(Number(valor))}
                 >
-                  {rotulo} {brl(valor)}
+                  {rotulo} {brl(valor)}{margem != null ? ` · MG ${numero(margem, 1)}%` : ''}
                 </button>
               ))}
           </div>
