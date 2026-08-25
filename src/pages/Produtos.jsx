@@ -16,12 +16,12 @@ export default function Produtos() {
   const [busca, setBusca] = useState('')
 
   const [sel, setSel] = useState(null) // produto em edição
-  const [editForm, setEditForm] = useState({ preco_vista: '', preco_prazo: '', margem_vista: '', margem_prazo: '', estoque: '' })
+  const [editForm, setEditForm] = useState({ preco_vista: '', preco_prazo: '', margem_vista: '', margem_prazo: '' })
   const [salvando, setSalvando] = useState(false)
 
   const [showImport, setShowImport] = useState(false)
   const [showNovo, setShowNovo] = useState(false)
-  const [novo, setNovo] = useState({ codigo: '', descricao: '', unidade: '', preco_vista: '', preco_prazo: '', margem_vista: '', margem_prazo: '', estoque: '' })
+  const [novo, setNovo] = useState({ codigo: '', descricao: '', unidade: '', preco_vista: '', preco_prazo: '', margem_vista: '', margem_prazo: '' })
 
   // Busca feita no servidor (o Supabase devolve no máximo 1000 linhas por consulta,
   // então com o catálogo inteiro não dá para filtrar só no navegador).
@@ -52,7 +52,6 @@ export default function Produtos() {
       preco_prazo: p.preco_prazo ?? '',
       margem_vista: p.margem_vista ?? '',
       margem_prazo: p.margem_prazo ?? '',
-      estoque: p.estoque ?? '',
     })
   }
 
@@ -70,7 +69,7 @@ export default function Produtos() {
         preco_prazo: prazo,
         margem_vista: editForm.margem_vista === '' ? null : Number(editForm.margem_vista),
         margem_prazo: editForm.margem_prazo === '' ? null : Number(editForm.margem_prazo),
-        estoque: Number(editForm.estoque) || 0,
+        // estoque não é editável no app: vem só da sincronização com o SiSCom
         atualizado_em: new Date().toISOString(),
       })
       .eq('id', sel.id)
@@ -101,7 +100,7 @@ export default function Produtos() {
       preco_prazo: prazo,
       margem_vista: novo.margem_vista === '' ? null : Number(novo.margem_vista),
       margem_prazo: novo.margem_prazo === '' ? null : Number(novo.margem_prazo),
-      estoque: Number(novo.estoque) || 0,
+      estoque: 0,
       atualizado_em: new Date().toISOString(),
     })
     setSalvando(false)
@@ -111,7 +110,7 @@ export default function Produtos() {
     }
     toast('Produto criado')
     setShowNovo(false)
-    setNovo({ codigo: '', descricao: '', unidade: '', preco_vista: '', preco_prazo: '', margem_vista: '', margem_prazo: '', estoque: '' })
+    setNovo({ codigo: '', descricao: '', unidade: '', preco_vista: '', preco_prazo: '', margem_vista: '', margem_prazo: '' })
     carregar()
   }
 
@@ -229,16 +228,8 @@ export default function Produtos() {
               />
             </div>
           </div>
-          <div className="row">
-            <div className="field">
-              <label>Estoque</label>
-              <input
-                type="number"
-                step="1"
-                value={editForm.estoque}
-                onChange={(e) => setEditForm({ ...editForm, estoque: e.target.value })}
-              />
-            </div>
+          <div className="muted mt">
+            Estoque: {numero(sel.estoque)} {sel.unidade || ''} · sincronizado do SiSCom (não editável aqui)
           </div>
           {(sel.preco_revenda_vista != null || sel.preco_revenda_prazo != null) && (
             <div className="muted mt">
@@ -291,12 +282,7 @@ export default function Produtos() {
               <input type="number" step="0.01" value={novo.margem_prazo} onChange={(e) => setNovo({ ...novo, margem_prazo: e.target.value })} />
             </div>
           </div>
-          <div className="row">
-            <div className="field">
-              <label>Estoque</label>
-              <input type="number" step="1" value={novo.estoque} onChange={(e) => setNovo({ ...novo, estoque: e.target.value })} />
-            </div>
-          </div>
+          <div className="muted mt">Estoque entra pela sincronização com o SiSCom.</div>
           <div className="row mt">
             <button className="btn btn-outline" onClick={() => setShowNovo(false)} disabled={salvando}>
               Cancelar

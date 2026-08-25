@@ -230,6 +230,48 @@ async function main() {
       return
     }
 
+    if (tem('--estoque')) {
+      const cod = Number(args[args.indexOf('--estoque') + 1])
+      if (!cod) {
+        console.log('Uso: node sincronizar.js --estoque CODIGO_DO_PRODUTO')
+        return
+      }
+      const atual = await query(
+        db,
+        `SELECT SALDO_ESTOQUE, DATA_ESTOQUE FROM TBSALDOATUAL WHERE CODEMPRESA = ? AND CODPRODUTO = ?`,
+        [EMPRESA, cod]
+      )
+      console.log('TBSALDOATUAL (fonte atual do sincronizador):')
+      atual.forEach((r) => console.log(`  saldo ${r.SALDO_ESTOQUE} | data ${r.DATA_ESTOQUE}`))
+      if (!atual.length) console.log('  (sem registro)')
+
+      const saldos = await query(
+        db,
+        `SELECT FIRST 3 ANO_MES, QT_SALDO_ATUAL, QT_EST_FISICO, QT_DISPONIVEL, QT_ENTR_MES, QT_SAIDA_MES
+           FROM TBSALDO WHERE CODEMPRESA = ? AND CODPRODUTO = ? ORDER BY ANO_MES DESC`,
+        [EMPRESA, cod]
+      )
+      console.log('TBSALDO (resumo mensal, mais recente primeiro):')
+      saldos.forEach((r) =>
+        console.log(`  ${r.ANO_MES}: saldo atual ${r.QT_SALDO_ATUAL} | fisico ${r.QT_EST_FISICO} | disponivel ${r.QT_DISPONIVEL} | entradas ${r.QT_ENTR_MES} | saidas ${r.QT_SAIDA_MES}`)
+      )
+      if (!saldos.length) console.log('  (sem registro)')
+
+      const movs = await query(
+        db,
+        `SELECT FIRST 5 DATAMOVIMENTO, CODTM, QUANTIDADE, SALDOESTOQUE
+           FROM TBMOVESTOQUE WHERE CODEMPRESA = ? AND CODPRODUTO = ?
+          ORDER BY DATAMOVIMENTO DESC, CHAVELOCAL DESC`,
+        [EMPRESA, cod]
+      )
+      console.log('TBMOVESTOQUE (últimos 5 movimentos):')
+      movs.forEach((r) =>
+        console.log(`  ${r.DATAMOVIMENTO} | operacao ${r.CODTM} | qtde ${r.QUANTIDADE} | saldo apos ${r.SALDOESTOQUE}`)
+      )
+      if (!movs.length) console.log('  (sem movimento)')
+      return
+    }
+
     console.log('Conectando no Supabase...')
     const sessao = await supaLogin()
 
