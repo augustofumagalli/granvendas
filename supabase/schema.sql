@@ -219,7 +219,13 @@ create policy "orc_itens_leitura_todos" on orcamento_itens for select using (aut
 create policy "orc_itens_escrita_dono_ou_gestor" on orcamento_itens for all
   using (exists (select 1 from orcamentos o where o.id = orcamento_id and (o.perfil_id = auth.uid() or public.is_gestor())))
   with check (exists (select 1 from orcamentos o where o.id = orcamento_id and (o.perfil_id = auth.uid() or public.is_gestor())));
-create policy "visitas_proprio" on visitas for all using (auth.uid() = perfil_id) with check (auth.uid() = perfil_id);
+-- Visitas: leitura/edição do dono (gestor também lê e edita); exclusão só do gestor
+create policy "visitas_le_dono_ou_gestor" on visitas for select using (auth.uid() = perfil_id or public.is_gestor());
+create policy "visitas_insere_proprio" on visitas for insert with check (auth.uid() = perfil_id);
+create policy "visitas_edita_dono_ou_gestor" on visitas for update
+  using (auth.uid() = perfil_id or public.is_gestor())
+  with check (auth.uid() = perfil_id or public.is_gestor());
+create policy "visitas_exclui_gestor" on visitas for delete using (public.is_gestor());
 create policy "rotas_proprio" on rotas for all using (auth.uid() = perfil_id) with check (auth.uid() = perfil_id);
 create policy "rota_pontos_proprio" on rota_pontos for all using (auth.uid() = perfil_id) with check (auth.uid() = perfil_id);
 
@@ -233,3 +239,5 @@ create policy "visitas_upload" on storage.objects for insert to authenticated
   with check (bucket_id = 'visitas');
 create policy "visitas_leitura" on storage.objects for select
   using (bucket_id = 'visitas');
+create policy "visitas_apaga_foto" on storage.objects for delete to authenticated
+  using (bucket_id = 'visitas' and ((storage.foldername(name))[1] = auth.uid()::text or public.is_gestor()));
