@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import Modal from '../components/Modal'
-import { brl, numero, data, soDigitos, curingaParaIlike, formataTelefone, formataCpfCnpj } from '../lib/format'
+import { brl, numero, data, soDigitos, curingaParaIlike, combinaCuringa, formataTelefone, formataCpfCnpj } from '../lib/format'
 
 const STATUS_FILTROS = [
   { valor: 'todos', label: 'Todos' },
@@ -74,6 +74,14 @@ export default function Orcamentos() {
     setEditando(orc)
   }
 
+  async function excluirOrcamento(o) {
+    if (!window.confirm(`Excluir o orçamento Nº${o.numero}? Esta ação não pode ser desfeita.`)) return
+    const { error } = await supabase.from('orcamentos').delete().eq('id', o.id)
+    if (error) { toast('Erro ao excluir'); return }
+    toast('Orçamento excluído')
+    carregar()
+  }
+
   const lista =
     filtro === 'todos' ? orcamentos : orcamentos.filter((o) => o.status === filtro)
 
@@ -119,6 +127,20 @@ export default function Orcamentos() {
               </div>
             </div>
             <div className="mono">{brl(o.total)}</div>
+            <button
+              className="btn-ghost"
+              aria-label="Editar orçamento"
+              onClick={(e) => { e.stopPropagation(); abrirEdicao(o) }}
+            >
+              ✏️
+            </button>
+            <button
+              className="btn-ghost"
+              aria-label="Excluir orçamento"
+              onClick={(e) => { e.stopPropagation(); excluirOrcamento(o) }}
+            >
+              🗑
+            </button>
           </div>
         ))
       )}
@@ -160,21 +182,21 @@ function ModalNovo({ user, clientes, condicoes, orcamentoExistente, recarregarAu
   const [salvando, setSalvando] = useState(false)
   const [carregandoItens, setCarregandoItens] = useState(edicao)
 
-  // itens criados na hora via cadastro rápido
+  // clientes criados na hora via cadastro rápido
   const [clientesExtra, setClientesExtra] = useState([])
-  const [produtosExtra, setProdutosExtra] = useState([])
   const todosClientes = [...clientesExtra, ...clientes]
+
+  // busca de cliente: digita para procurar (curinga % também vale)
+  const [buscaCli, setBuscaCli] = useState('')
 
   // form de item — a busca de produto roda no servidor, com % como curinga
   const [buscaProd, setBuscaProd] = useState('')
   const [resultadosProd, setResultadosProd] = useState([])
   const [buscandoProd, setBuscandoProd] = useState(false)
-  const [produtoId, setProdutoId] = useState('')
+  const [prodSel, setProdSel] = useState(null)
   const [qtd, setQtd] = useState(1)
   const [preco, setPreco] = useState(0)
   const [unidade, setUnidade] = useState('')
-
-  const todosProdutos = [...produtosExtra, ...resultadosProd.filter((r) => !produtosExtra.some((e) => e.id === r.id))]
 
   useEffect(() => {
     const padrao = curingaParaIlike(buscaProd)
@@ -220,35 +242,45 @@ function ModalNovo({ user, clientes, condicoes, orcamentoExistente, recarregarAu
     return () => { vivo = false }
   }, [edicao, orcamentoExistente])
 
-  const produtosFiltrados = todosProdutos.slice(0, 50)
-  const produtoSel = todosProdutos.find((x) => x.id === produtoId)
+  const clienteSel = todosClientes.find((c) => c.id === clienteId)
+  const nomeClienteSel = clienteSel?.razao_social || clienteSel?.nome_fantasia || orcamentoExistente?.cliente_nome || ''
+  const clientesFiltrados = buscaCli.trim()
+    ? todosClientes
+        .filter((c) => combinaCuringa(`${c.razao_social || ''} ${c.nome_fantasia || ''} ${c.cnpj || ''}`, buscaCli))
+        .slice(0, 20)
+    : []
 
-  function aoEscolherProduto(id) {
-    setProdutoId(id)
-    const p = todosProdutos.find((x) => x.id === id)
-    setPreco(p ? Number(p.preco) || 0 : 0)
-    setUnidade(p?.unidade || '')
+  function escolherCliente(c) {
+    setClienteId(c.id)
+    setBuscaCli('')
+  }
+
+  function escolherProduto(p) {
+    setProdSel(p)
+    setPreco(Number(p.preco) || 0)
+    setUnidade(p.unidade || '')
     setQtd(1)
+    setBuscaProd('')
+    setResultadosProd([])
   }
 
   function adicionarItem() {
-    const p = todosProdutos.find((x) => x.id === produtoId)
-    if (!p) { toast('Selecione um produto'); return }
+    if (!prodSel) { toast('Selecione um produto'); return }
     const quantidade = Number(qtd) || 0
     const precoUnit = Number(preco) || 0
     if (quantidade <= 0) { toast('Quantidade inválida'); return }
     setItens((atual) => [
       ...atual,
       {
-        produto_id: p.id,
-        descricao: p.descricao,
-        unidade: (unidade || p.unidade || '').trim(),
+        produto_id: prodSel.id,
+        descricao: prodSel.descricao,
+        unidade: (unidade || prodSel.unidade || '').trim(),
         quantidade,
         preco_unit: precoUnit,
         subtotal: quantidade * precoUnit,
       },
     ])
-    setProdutoId(''); setBuscaProd(''); setQtd(1); setPreco(0); setUnidade('')
+    setProdSel(null); setQtd(1); setPreco(0); setUnidade('')
   }
 
   function removerItem(i) {
@@ -261,8 +293,7 @@ function ModalNovo({ user, clientes, condicoes, orcamentoExistente, recarregarAu
     if (!clienteId) { toast('Selecione um cliente'); return }
     if (itens.length === 0) { toast('Adicione ao menos um item'); return }
     setSalvando(true)
-    const cliente = todosClientes.find((c) => c.id === clienteId)
-    const clienteNome = cliente?.razao_social || cliente?.nome_fantasia || 'Cliente'
+    const clienteNome = nomeClienteSel || 'Cliente'
     const dadosOrc = {
       total,
       cliente_id: clienteId,
@@ -307,90 +338,127 @@ function ModalNovo({ user, clientes, condicoes, orcamentoExistente, recarregarAu
   return (
     <Modal titulo={edicao ? `Editar orçamento Nº${orcamentoExistente.numero}` : 'Novo orçamento'} onClose={onClose}>
       <div className="field">
-        <label>Cliente</label>
-        <div className="row">
-          <select className="grow" value={clienteId} onChange={(e) => setClienteId(e.target.value)}>
-            <option value="">Selecione…</option>
-            {todosClientes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.razao_social || c.nome_fantasia || 'Cliente'}
-              </option>
+        <label>Cliente (digite para buscar)</label>
+        {clienteId ? (
+          <div className="list-item">
+            <div className="grow">
+              <div className="title">{nomeClienteSel || 'Cliente'}</div>
+              {clienteSel?.cnpj && <div className="sub">{formataCpfCnpj(clienteSel.cnpj)}</div>}
+            </div>
+            <button className="btn-ghost" onClick={() => setClienteId('')} aria-label="Trocar cliente">✕</button>
+          </div>
+        ) : (
+          <>
+            <div className="row">
+              <input
+                className="grow"
+                type="text"
+                placeholder="Nome, fantasia ou CNPJ/CPF"
+                value={buscaCli}
+                onChange={(e) => setBuscaCli(e.target.value)}
+              />
+              <button className="btn btn-outline btn-sm" onClick={() => setNovoCliente(true)}>+ Novo</button>
+            </div>
+            {buscaCli.trim() && clientesFiltrados.length === 0 && (
+              <div className="empty">Nenhum cliente encontrado.</div>
+            )}
+            {clientesFiltrados.map((c) => (
+              <div key={c.id} className="list-item" style={{ cursor: 'pointer' }} onClick={() => escolherCliente(c)}>
+                <div className="grow">
+                  <div className="title">{c.razao_social || c.nome_fantasia || 'Cliente'}</div>
+                  <div className="sub">
+                    {c.municipio || ''}{c.uf ? `/${c.uf}` : ''}
+                    {c.cnpj ? ` · ${formataCpfCnpj(c.cnpj)}` : ''}
+                  </div>
+                </div>
+              </div>
             ))}
-          </select>
-          <button className="btn btn-outline btn-sm" onClick={() => setNovoCliente(true)}>+ Novo</button>
-        </div>
+          </>
+        )}
       </div>
 
       <div className="section-title mt">Itens</div>
 
       <div className="field">
-        <label>Buscar produto (use % como curinga)</label>
-        <div className="row">
-          <input
-            className="grow"
-            type="text"
-            placeholder="Ex.: tubo%inox%50"
-            value={buscaProd}
-            onChange={(e) => setBuscaProd(e.target.value)}
-          />
-          <button className="btn btn-outline btn-sm" onClick={() => setNovoProduto(true)}>+ Novo</button>
-        </div>
-      </div>
-
-      <div className="field">
-        <label>
-          Produto
-          {buscandoProd ? ' (buscando…)' : buscaProd ? ` (${produtosFiltrados.length}${produtosFiltrados.length === 50 ? '+' : ''})` : ''}
-        </label>
-        <select value={produtoId} onChange={(e) => aoEscolherProduto(e.target.value)}>
-          <option value="">{buscaProd ? 'Selecione…' : 'Digite acima para buscar…'}</option>
-          {produtosFiltrados.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.codigo ? p.codigo + ' · ' : ''}{p.descricao} — {brl(p.preco)}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {produtoSel && (
-        <div className="row mb" style={{ flexWrap: 'wrap', gap: 6 }}>
-          {[
-            ['À vista', produtoSel.preco_vista ?? produtoSel.preco],
-            ['A prazo', produtoSel.preco_prazo],
-            ['Revenda à vista', produtoSel.preco_revenda_vista],
-            ['Revenda a prazo', produtoSel.preco_revenda_prazo],
-          ]
-            .filter(([, v]) => v != null)
-            .map(([rotulo, valor]) => (
-              <button
-                key={rotulo}
-                type="button"
-                className={'badge ' + (Number(preco) === Number(valor) ? 'badge-azul' : 'badge-cinza')}
-                style={{ cursor: 'pointer', border: 'none' }}
-                onClick={() => setPreco(Number(valor))}
-              >
-                {rotulo} {brl(valor)}
-              </button>
+        <label>Produto (digite para buscar; % é curinga)</label>
+        {prodSel ? (
+          <div className="list-item">
+            <div className="grow">
+              <div className="title">{prodSel.codigo ? prodSel.codigo + ' · ' : ''}{prodSel.descricao}</div>
+              <div className="sub">Estoque: {numero(prodSel.estoque)} {prodSel.unidade || ''}</div>
+            </div>
+            <button className="btn-ghost" onClick={() => setProdSel(null)} aria-label="Trocar produto">✕</button>
+          </div>
+        ) : (
+          <>
+            <div className="row">
+              <input
+                className="grow"
+                type="text"
+                placeholder="Ex.: tubo%inox%50"
+                value={buscaProd}
+                onChange={(e) => setBuscaProd(e.target.value)}
+              />
+              <button className="btn btn-outline btn-sm" onClick={() => setNovoProduto(true)}>+ Novo</button>
+            </div>
+            {buscandoProd && <p className="muted mt">Buscando…</p>}
+            {!buscandoProd && buscaProd.trim() && resultadosProd.length === 0 && (
+              <div className="empty">Nenhum produto encontrado.</div>
+            )}
+            {resultadosProd.map((p) => (
+              <div key={p.id} className="list-item" style={{ cursor: 'pointer' }} onClick={() => escolherProduto(p)}>
+                <div className="grow">
+                  <div className="title">{p.codigo ? p.codigo + ' · ' : ''}{p.descricao}</div>
+                  <div className="sub">Estoque: {numero(p.estoque)} {p.unidade || ''}</div>
+                </div>
+                <div className="mono">{brl(p.preco)}</div>
+              </div>
             ))}
-        </div>
-      )}
-
-      <div className="row">
-        <div className="field grow">
-          <label>Qtd</label>
-          <input type="number" min="0" step="1" value={qtd} onChange={(e) => setQtd(e.target.value)} />
-        </div>
-        <div className="field" style={{ maxWidth: 88 }}>
-          <label>Un</label>
-          <input type="text" value={unidade} placeholder="UN" onChange={(e) => setUnidade(e.target.value)} />
-        </div>
-        <div className="field grow">
-          <label>Preço unit.</label>
-          <input type="number" min="0" step="0.01" value={preco} onChange={(e) => setPreco(e.target.value)} />
-        </div>
+          </>
+        )}
       </div>
 
-      <button className="btn btn-outline btn-sm mb" onClick={adicionarItem}>+ Adicionar item</button>
+      {prodSel && (
+        <>
+          <div className="row mb" style={{ flexWrap: 'wrap', gap: 6 }}>
+            {[
+              ['À vista', prodSel.preco_vista ?? prodSel.preco],
+              ['A prazo', prodSel.preco_prazo],
+              ['Revenda à vista', prodSel.preco_revenda_vista],
+              ['Revenda a prazo', prodSel.preco_revenda_prazo],
+            ]
+              .filter(([, v]) => v != null)
+              .map(([rotulo, valor]) => (
+                <button
+                  key={rotulo}
+                  type="button"
+                  className={'badge ' + (Number(preco) === Number(valor) ? 'badge-azul' : 'badge-cinza')}
+                  style={{ cursor: 'pointer', border: 'none' }}
+                  onClick={() => setPreco(Number(valor))}
+                >
+                  {rotulo} {brl(valor)}
+                </button>
+              ))}
+          </div>
+
+          <div className="row">
+            <div className="field grow">
+              <label>Qtd</label>
+              <input type="number" min="0" step="1" value={qtd} onChange={(e) => setQtd(e.target.value)} />
+            </div>
+            <div className="field" style={{ maxWidth: 88 }}>
+              <label>Un</label>
+              <input type="text" value={unidade} placeholder="UN" onChange={(e) => setUnidade(e.target.value)} />
+            </div>
+            <div className="field grow">
+              <label>Preço unit.</label>
+              <input type="number" min="0" step="0.01" value={preco} onChange={(e) => setPreco(e.target.value)} />
+            </div>
+          </div>
+
+          <button className="btn btn-outline btn-sm mb" onClick={adicionarItem}>+ Adicionar item</button>
+        </>
+      )}
 
       {carregandoItens ? (
         <div className="center"><div className="spin" /></div>
@@ -453,6 +521,7 @@ function ModalNovo({ user, clientes, condicoes, orcamentoExistente, recarregarAu
           onCriado={(c) => {
             setClientesExtra((a) => [c, ...a])
             setClienteId(c.id)
+            setBuscaCli('')
             setNovoCliente(false)
             recarregarAux && recarregarAux()
           }}
@@ -463,14 +532,8 @@ function ModalNovo({ user, clientes, condicoes, orcamentoExistente, recarregarAu
           toast={toast}
           onClose={() => setNovoProduto(false)}
           onCriado={(p) => {
-            setProdutosExtra((a) => [p, ...a])
-            setBuscaProd('')
-            setProdutoId(p.id)
-            setPreco(Number(p.preco) || 0)
-            setUnidade(p.unidade || '')
-            setQtd(1)
+            escolherProduto(p)
             setNovoProduto(false)
-            recarregarAux && recarregarAux()
           }}
         />
       )}
