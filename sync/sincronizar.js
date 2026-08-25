@@ -122,12 +122,29 @@ function mapearCliente(c) {
   }
 }
 
+// Entre os movimentos do dia mais recente de um produto, o "saldo após" do
+// último é o estoque vivo (a TBSALDOATUAL fica defasada durante o dia). A
+// ordem dentro do dia vem das chaves das tabelas de origem: a maior chave é
+// o movimento mais novo.
+function ultimoSaldo(movsDoUltimoDia) {
+  let melhor = null
+  let melhorChave = -1
+  movsDoUltimoDia.forEach((r) => {
+    const chave = Math.max(Number(r.CHAVELOCAL) || 0, Number(r.CHAVESAIDA) || 0)
+    if (chave > melhorChave) {
+      melhorChave = chave
+      melhor = num(r.SALDOESTOQUE)
+    }
+  })
+  return melhor
+}
+
 const CAMPOS_PRODUTO = ['descricao', 'unidade', 'preco', 'preco_vista', 'preco_prazo', 'margem_vista', 'margem_prazo', 'preco_revenda_vista', 'preco_revenda_prazo', 'estoque', 'ativo']
 
 // Na tela do SiSCom cada lista tem duas linhas de preço:
 // linha 1 = PRECOLISTA/MARGEMLISTA (o "a prazo" da Grantubos)
 // linha 2 = PRECOMIN/MARGEMMIN (o "à vista", mais barato)
-function mapearProduto(p, precos, precosRevenda) {
+function mapearProduto(p, precos, precosRevenda, estoqueMov) {
   const pr = precos.get(p.CODPRODUTO)
   const rev = precosRevenda.get(p.CODPRODUTO)
   const preco_vista = pr?.precoVista ?? null
@@ -143,7 +160,7 @@ function mapearProduto(p, precos, precosRevenda) {
     margem_prazo: pr?.margemPrazo ?? null,
     preco_revenda_vista: rev?.precoVista ?? null,
     preco_revenda_prazo: rev?.precoPrazo ?? null,
-    estoque: num(p.SALDO_ESTOQUE) ?? 0,
+    estoque: estoqueMov.get(p.CODPRODUTO) ?? num(p.SALDO_ESTOQUE) ?? 0,
     ativo: !Number(p.INATIVO),
   }
 }
@@ -259,16 +276,21 @@ async function main() {
 
       const movs = await query(
         db,
-        `SELECT FIRST 5 DATAMOVIMENTO, CODTM, QUANTIDADE, SALDOESTOQUE
+        `SELECT FIRST 8 DATAMOVIMENTO, CODTM, QUANTIDADE, SALDOESTOQUE, CHAVELOCAL, CHAVESAIDA
            FROM TBMOVESTOQUE WHERE CODEMPRESA = ? AND CODPRODUTO = ?
           ORDER BY DATAMOVIMENTO DESC, CHAVELOCAL DESC`,
         [EMPRESA, cod]
       )
-      console.log('TBMOVESTOQUE (últimos 5 movimentos):')
+      console.log('TBMOVESTOQUE (últimos movimentos):')
       movs.forEach((r) =>
-        console.log(`  ${r.DATAMOVIMENTO} | operacao ${r.CODTM} | qtde ${r.QUANTIDADE} | saldo apos ${r.SALDOESTOQUE}`)
+        console.log(
+          `  ${r.DATAMOVIMENTO} | operacao ${r.CODTM} | qtde ${r.QUANTIDADE} | saldo apos ${r.SALDOESTOQUE} | chaveLocal ${r.CHAVELOCAL} | chaveSaida ${r.CHAVESAIDA}`
+        )
       )
       if (!movs.length) console.log('  (sem movimento)')
+
+      const escolhido = ultimoSaldo(movs)
+      console.log(`\nEstoque que o sincronizador vai usar (último movimento): ${escolhido ?? '(sem movimento -> TBSALDOATUAL)'}`)
       return
     }
 
@@ -360,7 +382,26 @@ async function main() {
       // lista REVENDA: piso para descontos maiores (padrão 4 na Grantubos; null desliga)
       const precosRevenda = await lerLista('listaPrecoRevenda' in cfg ? cfg.listaPrecoRevenda : 4)
 
-      const doSiscom = rows.map((p) => mapearProduto(p, precos, precosRevenda))
+      console.log('Calculando estoque pelos movimentos (pode levar um pouco)...')
+      const ultMovs = await query(
+        db,
+        `SELECT m.CODPRODUTO, m.SALDOESTOQUE, m.CHAVELOCAL, m.CHAVESAIDA
+           FROM TBMOVESTOQUE m
+           JOIN (SELECT CODPRODUTO, MAX(DATAMOVIMENTO) AS DT
+                   FROM TBMOVESTOQUE WHERE CODEMPRESA = ? GROUP BY CODPRODUTO) u
+             ON u.CODPRODUTO = m.CODPRODUTO AND u.DT = m.DATAMOVIMENTO
+          WHERE m.CODEMPRESA = ?`,
+        [EMPRESA, EMPRESA]
+      )
+      const movsPorProduto = new Map()
+      ultMovs.forEach((r) => {
+        if (!movsPorProduto.has(r.CODPRODUTO)) movsPorProduto.set(r.CODPRODUTO, [])
+        movsPorProduto.get(r.CODPRODUTO).push(r)
+      })
+      const estoqueMov = new Map()
+      movsPorProduto.forEach((rs, cod) => estoqueMov.set(cod, ultimoSaldo(rs)))
+
+      const doSiscom = rows.map((p) => mapearProduto(p, precos, precosRevenda, estoqueMov))
       const existentes = await supaGetTudo(`produtos?select=codigo,${CAMPOS_PRODUTO.join(',')}`, sessao)
       const mapaApp = new Map(existentes.map((p) => [String(p.codigo).trim(), p]))
 
