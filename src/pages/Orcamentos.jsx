@@ -38,10 +38,10 @@ export default function Orcamentos() {
   async function carregar() {
     if (!user) return
     setLoading(true)
+    // orçamentos são visíveis a toda a equipe (edição/exclusão: dono ou gestor)
     const { data: rows } = await supabase
       .from('orcamentos')
       .select('*')
-      .eq('perfil_id', user.id)
       .order('criado_em', { ascending: false })
     setOrcamentos(rows || [])
     setLoading(false)
@@ -99,6 +99,8 @@ export default function Orcamentos() {
   const lista =
     filtro === 'todos' ? orcamentos : orcamentos.filter((o) => o.status === filtro)
 
+  const podeGerir = (o) => o.perfil_id === user?.id || perfil?.papel === 'gestor'
+
   return (
     <div>
       <div className="between mb">
@@ -134,27 +136,32 @@ export default function Orcamentos() {
             <div className="grow">
               <div className="title">Nº{o.numero} · {o.cliente_nome || 'Cliente'}</div>
               <div className="sub">
-                {data(o.criado_em)}{' '}
+                {data(o.criado_em)}
+                {o.vendedor_nome ? ` · ${o.vendedor_nome}` : ''}{' '}
                 <span className={'badge ' + (BADGE_STATUS[o.status] || 'badge-cinza')}>
                   {o.status}
                 </span>
               </div>
             </div>
             <div className="mono">{brl(o.total)}</div>
-            <button
-              className="btn-ghost"
-              aria-label="Editar orçamento"
-              onClick={(e) => { e.stopPropagation(); abrirEdicao(o) }}
-            >
-              ✏️
-            </button>
-            <button
-              className="btn-ghost"
-              aria-label="Excluir orçamento"
-              onClick={(e) => { e.stopPropagation(); excluirOrcamento(o) }}
-            >
-              🗑
-            </button>
+            {podeGerir(o) && (
+              <>
+                <button
+                  className="btn-ghost"
+                  aria-label="Editar orçamento"
+                  onClick={(e) => { e.stopPropagation(); abrirEdicao(o) }}
+                >
+                  ✏️
+                </button>
+                <button
+                  className="btn-ghost"
+                  aria-label="Excluir orçamento"
+                  onClick={(e) => { e.stopPropagation(); excluirOrcamento(o) }}
+                >
+                  🗑
+                </button>
+              </>
+            )}
           </div>
         ))
       )}
@@ -162,6 +169,7 @@ export default function Orcamentos() {
       {(modalNovo || editando) && (
         <ModalNovo
           user={user}
+          perfil={perfil}
           clientes={clientes}
           condicoes={condicoes}
           orcamentoExistente={editando}
@@ -176,6 +184,7 @@ export default function Orcamentos() {
         <ModalDetalhe
           orcamento={detalhe}
           vendedor={perfil}
+          gerir={podeGerir(detalhe)}
           toast={toast}
           onEditar={abrirEdicao}
           onClose={() => setDetalhe(null)}
@@ -186,7 +195,7 @@ export default function Orcamentos() {
   )
 }
 
-function ModalNovo({ user, clientes, condicoes, orcamentoExistente, recarregarAux, toast, onClose, onSalvo }) {
+function ModalNovo({ user, perfil, clientes, condicoes, orcamentoExistente, recarregarAux, toast, onClose, onSalvo }) {
   const edicao = !!orcamentoExistente
   const [clienteId, setClienteId] = useState(orcamentoExistente?.cliente_id || '')
   const [itens, setItens] = useState([])
@@ -325,7 +334,7 @@ function ModalNovo({ user, clientes, condicoes, orcamentoExistente, recarregarAu
     } else {
       const { data: orc, error } = await supabase
         .from('orcamentos')
-        .insert({ ...dadosOrc, status: 'rascunho', perfil_id: user.id })
+        .insert({ ...dadosOrc, status: 'rascunho', perfil_id: user.id, vendedor_nome: perfil?.nome || null })
         .select()
         .single()
       if (error || !orc) { setSalvando(false); toast('Erro ao salvar orçamento'); return }
@@ -681,7 +690,7 @@ function QuickProduto({ toast, onClose, onCriado }) {
   )
 }
 
-function ModalDetalhe({ orcamento, vendedor, toast, onEditar, onClose, onMudou }) {
+function ModalDetalhe({ orcamento, vendedor, gerir, toast, onEditar, onClose, onMudou }) {
   const [itens, setItens] = useState([])
   const [cliente, setCliente] = useState(null)
   const [status, setStatus] = useState(orcamento.status)
@@ -787,7 +796,10 @@ function ModalDetalhe({ orcamento, vendedor, toast, onEditar, onClose, onMudou }
   return (
     <Modal titulo={`Nº${orcamento.numero} · ${orcamento.cliente_nome || 'Cliente'}`} onClose={onClose}>
       <div className="between mb">
-        <span className="muted">{data(orcamento.criado_em)}</span>
+        <span className="muted">
+          {data(orcamento.criado_em)}
+          {orcamento.vendedor_nome ? ` · ${orcamento.vendedor_nome}` : ''}
+        </span>
         <span className={'badge ' + (BADGE_STATUS[status] || 'badge-cinza')}>{status}</span>
       </div>
 
@@ -821,40 +833,46 @@ function ModalDetalhe({ orcamento, vendedor, toast, onEditar, onClose, onMudou }
             </div>
           )}
 
-          <div className="row mb">
-            <button className="btn btn-outline grow" onClick={() => onEditar(orcamento)} disabled={ocupado}>
-              ✏️ Editar orçamento
-            </button>
-          </div>
+          {gerir ? (
+            <>
+              <div className="row mb">
+                <button className="btn btn-outline grow" onClick={() => onEditar(orcamento)} disabled={ocupado}>
+                  ✏️ Editar orçamento
+                </button>
+              </div>
 
-          <div className="row mb">
-            <button className="btn btn-verde grow" onClick={enviarWhatsapp} disabled={ocupado}>
-              {ocupado ? <span className="spin" /> : '🟢 Enviar por WhatsApp'}
-            </button>
-          </div>
+              <div className="row mb">
+                <button className="btn btn-verde grow" onClick={enviarWhatsapp} disabled={ocupado}>
+                  {ocupado ? <span className="spin" /> : '🟢 Enviar por WhatsApp'}
+                </button>
+              </div>
 
-          <div className="row" style={{ flexWrap: 'wrap' }}>
-            <button
-              className="btn btn-verde grow"
-              onClick={() => marcarStatus('fechado', 'fechado_em')}
-              disabled={ocupado || status === 'fechado'}
-            >
-              ✔ Marcar fechado
-            </button>
-            <button
-              className="btn btn-outline grow"
-              onClick={() => marcarStatus('perdido', null)}
-              disabled={ocupado || status === 'perdido'}
-            >
-              ✖ Perdido
-            </button>
-          </div>
+              <div className="row" style={{ flexWrap: 'wrap' }}>
+                <button
+                  className="btn btn-verde grow"
+                  onClick={() => marcarStatus('fechado', 'fechado_em')}
+                  disabled={ocupado || status === 'fechado'}
+                >
+                  ✔ Marcar fechado
+                </button>
+                <button
+                  className="btn btn-outline grow"
+                  onClick={() => marcarStatus('perdido', null)}
+                  disabled={ocupado || status === 'perdido'}
+                >
+                  ✖ Perdido
+                </button>
+              </div>
 
-          <div className="row mt">
-            <button className="btn btn-outline grow" onClick={excluir} disabled={ocupado} style={{ color: '#c0392b', borderColor: '#e6b0aa' }}>
-              🗑 Excluir orçamento
-            </button>
-          </div>
+              <div className="row mt">
+                <button className="btn btn-outline grow" onClick={excluir} disabled={ocupado} style={{ color: '#c0392b', borderColor: '#e6b0aa' }}>
+                  🗑 Excluir orçamento
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="muted mt">Orçamento de {orcamento.vendedor_nome || 'outro vendedor'} — somente visualização.</div>
+          )}
         </>
       )}
     </Modal>

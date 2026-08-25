@@ -63,6 +63,7 @@ create table if not exists orcamentos (
   cliente_id uuid references clientes(id) on delete set null,
   cliente_nome text,
   perfil_id uuid references perfis(id) on delete cascade,
+  vendedor_nome text, -- snapshot do nome do vendedor (orçamentos são visíveis a todos)
   status text not null default 'rascunho', -- rascunho | enviado | fechado | perdido
   total numeric(12,2) not null default 0,
   observacao text,
@@ -206,10 +207,18 @@ create policy "importacoes_auth" on importacoes_preco for all using (auth.role()
 create policy "condicoes_auth" on condicoes_pagamento for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 
 -- Orçamentos/itens/visitas/rotas: cada vendedor só o que é seu
-create policy "orc_proprio" on orcamentos for all using (auth.uid() = perfil_id) with check (auth.uid() = perfil_id);
-create policy "orc_itens_proprio" on orcamento_itens for all
-  using (exists (select 1 from orcamentos o where o.id = orcamento_id and o.perfil_id = auth.uid()))
-  with check (exists (select 1 from orcamentos o where o.id = orcamento_id and o.perfil_id = auth.uid()));
+-- Orçamentos: todos os autenticados leem; escrita do dono (ou gestor)
+create policy "orc_leitura_todos" on orcamentos for select using (auth.role() = 'authenticated');
+create policy "orc_insere_proprio" on orcamentos for insert with check (auth.uid() = perfil_id);
+create policy "orc_edita_dono_ou_gestor" on orcamentos for update
+  using (auth.uid() = perfil_id or public.is_gestor())
+  with check (auth.uid() = perfil_id or public.is_gestor());
+create policy "orc_exclui_dono_ou_gestor" on orcamentos for delete
+  using (auth.uid() = perfil_id or public.is_gestor());
+create policy "orc_itens_leitura_todos" on orcamento_itens for select using (auth.role() = 'authenticated');
+create policy "orc_itens_escrita_dono_ou_gestor" on orcamento_itens for all
+  using (exists (select 1 from orcamentos o where o.id = orcamento_id and (o.perfil_id = auth.uid() or public.is_gestor())))
+  with check (exists (select 1 from orcamentos o where o.id = orcamento_id and (o.perfil_id = auth.uid() or public.is_gestor())));
 create policy "visitas_proprio" on visitas for all using (auth.uid() = perfil_id) with check (auth.uid() = perfil_id);
 create policy "rotas_proprio" on rotas for all using (auth.uid() = perfil_id) with check (auth.uid() = perfil_id);
 create policy "rota_pontos_proprio" on rota_pontos for all using (auth.uid() = perfil_id) with check (auth.uid() = perfil_id);
