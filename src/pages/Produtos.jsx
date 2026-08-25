@@ -1,20 +1,17 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../context/ToastContext'
 import Modal from '../components/Modal'
 import ImportarPrecos from '../components/ImportarPrecos'
-import { brl, numero } from '../lib/format'
+import { brl, numero, curingaParaIlike } from '../lib/format'
 
-const norm = (s) =>
-  String(s ?? '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+const LIMITE_LISTA = 100
 
 export default function Produtos() {
   const toast = useToast()
 
   const [produtos, setProdutos] = useState([])
+  const [total, setTotal] = useState(null)
   const [carregando, setCarregando] = useState(true)
   const [busca, setBusca] = useState('')
 
@@ -26,25 +23,27 @@ export default function Produtos() {
   const [showNovo, setShowNovo] = useState(false)
   const [novo, setNovo] = useState({ codigo: '', descricao: '', unidade: '', preco_vista: '', preco_prazo: '', margem_vista: '', margem_prazo: '', estoque: '' })
 
-  async function carregar() {
+  // Busca feita no servidor (o Supabase devolve no máximo 1000 linhas por consulta,
+  // então com o catálogo inteiro não dá para filtrar só no navegador).
+  async function carregar(termo = busca) {
     setCarregando(true)
-    const { data, error } = await supabase.from('produtos').select('*').order('descricao')
+    let q = supabase.from('produtos').select('*', { count: 'exact' }).order('descricao').limit(LIMITE_LISTA)
+    const padrao = curingaParaIlike(termo)
+    if (padrao) q = q.or(`descricao.ilike."${padrao}",codigo.ilike."${padrao}"`)
+    const { data, count, error } = await q
     if (error) toast('Erro ao carregar produtos: ' + error.message)
     setProdutos(data || [])
+    setTotal(count ?? null)
     setCarregando(false)
   }
 
   useEffect(() => {
-    carregar()
-  }, [])
+    const t = setTimeout(() => carregar(busca), 300)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busca])
 
-  const filtrados = useMemo(() => {
-    const b = norm(busca).trim()
-    if (!b) return produtos
-    return produtos.filter(
-      (p) => norm(p.descricao).includes(b) || norm(p.codigo).includes(b)
-    )
-  }, [produtos, busca])
+  const filtrados = produtos
 
   function abrirEdicao(p) {
     setSel(p)
@@ -133,10 +132,17 @@ export default function Produtos() {
       <div className="field">
         <input
           type="search"
-          placeholder="Buscar por descrição ou código..."
+          placeholder="Buscar por descrição ou código (use % como curinga, ex.: tubo%inox%50)"
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
         />
+        {total != null && (
+          <div className="muted mt" style={{ fontSize: 12 }}>
+            {total > filtrados.length
+              ? `Mostrando ${filtrados.length} de ${numero(total)} — refine a busca para ver os demais.`
+              : `${numero(total)} produto(s)`}
+          </div>
+        )}
       </div>
 
       <div className="card">
@@ -166,6 +172,12 @@ export default function Produtos() {
                 {p.preco_prazo != null && (
                   <div className="mono muted" style={{ fontSize: 12 }}>
                     {brl(p.preco_prazo)} a prazo
+                  </div>
+                )}
+                {p.preco_revenda_vista != null && (
+                  <div className="mono muted" style={{ fontSize: 12 }}>
+                    Rev.: {brl(p.preco_revenda_vista)}
+                    {p.preco_revenda_prazo != null ? ` / ${brl(p.preco_revenda_prazo)}` : ''}
                   </div>
                 )}
               </div>
@@ -228,6 +240,12 @@ export default function Produtos() {
               />
             </div>
           </div>
+          {(sel.preco_revenda_vista != null || sel.preco_revenda_prazo != null) && (
+            <div className="muted mt">
+              Revenda (piso p/ desconto): {sel.preco_revenda_vista != null ? brl(sel.preco_revenda_vista) + ' à vista' : '—'}
+              {sel.preco_revenda_prazo != null ? ` · ${brl(sel.preco_revenda_prazo)} a prazo` : ''}
+            </div>
+          )}
           <div className="row mt">
             <button className="btn btn-outline" onClick={() => setSel(null)} disabled={salvando}>
               Cancelar

@@ -1,0 +1,18 @@
+{
+  "empresa": 1,
+  "firebird": {
+    "host": "SERVISOFT",
+    "porta": 3050,
+    "banco": "D:\\Siscom\\TabelasAds\\DBSISCOM.FDB",
+    "usuario": "SYSDBA",
+    "senha": "masterkey"
+  },
+  "listaPreco": 5,
+  "listaPrecoRevenda": 4,
+  "supabase": {
+    "url": "https://SEU-PROJETO.supabase.co",
+    "anonKey": "COLE_AQUI_A_VITE_SUPABASE_ANON_KEY_DO_.ENV",
+    "email": "seu-login-do-granvendas@exemplo.com",
+    "senha": "sua-senha-do-granvendas"
+  }
+}

@@ -16,7 +16,7 @@ App PWA de vendas externas da **Grantubos**. React + Vite + Supabase.
 
 ## Arquitetura
 - `src/pages/` — telas: Home, Produtos, Clientes, Orcamentos, Visitas, Relatorios, Configuracoes, Login
-- `src/components/` — Layout (nav), Modal, ImportarPrecos (Excel/PDF)
+- `src/components/` — Layout (nav), Modal, ImportarPrecos (Excel/PDF), ImportarClientes (Excel/CSV, upsert por CNPJ)
 - `src/context/` — AuthContext, ToastContext, ExpedienteContext (GPS/KM/expediente)
 - `src/lib/` — supabase (client), pdf (gera orçamento), geo (Haversine/GPS), format (brl, datas, CNPJ)
 - `supabase/schema.sql` — tabelas + RLS + storage bucket `visitas`

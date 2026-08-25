@@ -20,6 +20,23 @@ export default function Configuracoes() {
   const [salvandoPerfil, setSalvandoPerfil] = useState(false)
   const [salvandoExpediente, setSalvandoExpediente] = useState(false)
 
+  // Alteração de senha (Supabase Auth)
+  const [novaSenha, setNovaSenha] = useState('')
+  const [confirmaSenha, setConfirmaSenha] = useState('')
+  const [salvandoSenha, setSalvandoSenha] = useState(false)
+
+  async function alterarSenha() {
+    if (novaSenha.length < 6) { toast('A senha precisa ter pelo menos 6 caracteres'); return }
+    if (novaSenha !== confirmaSenha) { toast('As senhas não conferem'); return }
+    setSalvandoSenha(true)
+    const { error } = await supabase.auth.updateUser({ password: novaSenha })
+    setSalvandoSenha(false)
+    if (error) { toast('Erro ao alterar a senha: ' + error.message); return }
+    setNovaSenha('')
+    setConfirmaSenha('')
+    toast('Senha alterada com sucesso')
+  }
+
   // Condições de pagamento (compartilhadas entre gestor e vendedor)
   const CFORM_VAZIO = {
     codigo: '', nome: '', parcelas_manuais: false, parcelas_texto: '',
@@ -407,6 +424,35 @@ export default function Configuracoes() {
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <div className="card mb">
+        <div className="section-title">Alterar senha</div>
+        <div className="row">
+          <div className="field grow">
+            <label>Nova senha</label>
+            <input
+              type="password"
+              autoComplete="new-password"
+              value={novaSenha}
+              onChange={(e) => setNovaSenha(e.target.value)}
+            />
+          </div>
+          <div className="field grow">
+            <label>Confirmar nova senha</label>
+            <input
+              type="password"
+              autoComplete="new-password"
+              value={confirmaSenha}
+              onChange={(e) => setConfirmaSenha(e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="row mt">
+          <button className="btn btn-verde grow" onClick={alterarSenha} disabled={salvandoSenha}>
+            {salvandoSenha ? <span className="spin" /> : 'Alterar senha'}
+          </button>
         </div>
       </div>
 

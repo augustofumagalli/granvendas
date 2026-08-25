@@ -34,6 +34,25 @@ export function combinaCuringa(texto, consulta) {
   return true
 }
 
+// Converte a consulta do usuário num padrão para o ilike do Postgres:
+// espaços viram %, o % digitado é mantido, aspas saem. Vazio -> null.
+export function curingaParaIlike(consulta) {
+  const q = String(consulta ?? '').replace(/"/g, '').trim()
+  if (!q) return null
+  return '%' + q.replace(/\s+/g, '%') + '%'
+}
+
+// CPF (11 dígitos) ou CNPJ (14) conforme o tamanho
+export const formataCpfCnpj = (v) => {
+  const d = soDigitos(v)
+  if (d.length <= 11)
+    return d
+      .replace(/^(\d{3})(\d)/, '$1.$2')
+      .replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
+      .replace(/\.(\d{3})(\d{1,2})$/, '.$1-$2')
+  return formataCNPJ(d)
+}
+
 export const formataCNPJ = (v) => {
   const d = soDigitos(v).slice(0, 14)
   return d
