@@ -152,7 +152,8 @@ function mapearProduto(p, precos, precosRevenda, estoqueMov) {
   return {
     codigo: String(p.CODPRODUTO),
     descricao: txt(p.DESCRICAO) || String(p.CODPRODUTO),
-    unidade: txt(p.UNIDADE) || 'UN',
+    // na Grantubos a unidade de venda fica no campo EMBALAGEM (ex.: MT no tubo)
+    unidade: txt(p.EMBALAGEM) || txt(p.UNIDADE) || 'UN',
     preco: preco_vista ?? preco_prazo ?? 0,
     preco_vista,
     preco_prazo,
@@ -352,7 +353,7 @@ async function main() {
       console.log('Lendo produtos do SiSCom...')
       const rows = await query(
         db,
-        `SELECT P.CODPRODUTO, P.DESCRICAO, P.UNIDADE, P.INATIVO,
+        `SELECT P.CODPRODUTO, P.DESCRICAO, P.UNIDADE, P.EMBALAGEM, P.INATIVO,
                 S.SALDO_ESTOQUE
            FROM TCADPRODUTO P
            LEFT JOIN TBSALDOATUAL S ON S.CODEMPRESA = P.CODEMPRESA AND S.CODPRODUTO = P.CODPRODUTO
