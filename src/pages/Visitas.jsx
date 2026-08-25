@@ -8,7 +8,7 @@ import { numero, dataHora, hoje } from '../lib/format'
 import { pegarPosicao } from '../lib/geo'
 
 export default function Visitas() {
-  const { user } = useAuth()
+  const { user, perfil } = useAuth()
   const toast = useToast()
   const { config } = useExpediente()
 
@@ -63,6 +63,35 @@ export default function Visitas() {
     carregar()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
+
+  // caminho do arquivo no bucket a partir da URL pública
+  function caminhoFoto(fotoUrl) {
+    const marca = '/visitas/'
+    const i = String(fotoUrl || '').lastIndexOf(marca)
+    return i >= 0 ? decodeURIComponent(fotoUrl.slice(i + marca.length)) : null
+  }
+
+  async function removerFoto(v) {
+    if (!window.confirm('Remover a foto desta visita?')) return
+    const caminho = caminhoFoto(v.foto_url)
+    if (caminho) await supabase.storage.from('visitas').remove([caminho])
+    const { error } = await supabase.from('visitas').update({ foto_url: null }).eq('id', v.id)
+    if (error) { toast('Erro ao remover a foto'); return }
+    toast('Foto removida')
+    setDetalhe((d) => (d && d.id === v.id ? { ...d, foto_url: null } : d))
+    carregar()
+  }
+
+  async function excluirVisita(v) {
+    if (!window.confirm('Excluir esta visita? Esta ação não pode ser desfeita.')) return
+    const caminho = caminhoFoto(v.foto_url)
+    if (caminho) await supabase.storage.from('visitas').remove([caminho])
+    const { error } = await supabase.from('visitas').delete().eq('id', v.id)
+    if (error) { toast('Erro ao excluir (só o gestor pode excluir visitas)'); return }
+    toast('Visita excluída')
+    setDetalhe(null)
+    carregar()
+  }
 
   async function salvarMeta() {
     const valor = Number(metaInput)
@@ -183,7 +212,7 @@ export default function Visitas() {
           {detalhe.observacao && <p className="mb">{detalhe.observacao}</p>}
           {detalhe.lat != null && detalhe.lng != null && (
             <a
-              className="btn btn-outline"
+              className="btn btn-outline mb"
               style={{ width: '100%' }}
               href={`https://www.google.com/maps?q=${detalhe.lat},${detalhe.lng}`}
               target="_blank"
@@ -191,6 +220,20 @@ export default function Visitas() {
             >
               📍 Ver no mapa
             </a>
+          )}
+          {detalhe.foto_url && (
+            <button className="btn btn-outline mb" style={{ width: '100%' }} onClick={() => removerFoto(detalhe)}>
+              🗑 Remover foto
+            </button>
+          )}
+          {perfil?.papel === 'gestor' && (
+            <button
+              className="btn btn-outline"
+              style={{ width: '100%', color: '#c0392b', borderColor: '#e6b0aa' }}
+              onClick={() => excluirVisita(detalhe)}
+            >
+              🗑 Excluir visita
+            </button>
           )}
         </Modal>
       )}

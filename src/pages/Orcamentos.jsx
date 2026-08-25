@@ -211,6 +211,10 @@ function ModalNovo({ user, perfil, clientes, condicoes, orcamentoExistente, reca
 
   // busca de cliente: digita para procurar (curinga % também vale)
   const [buscaCli, setBuscaCli] = useState('')
+  // cliente avulso: orçamento só com o nome, sem cadastro
+  const [clienteAvulso, setClienteAvulso] = useState(
+    edicao && !orcamentoExistente.cliente_id ? orcamentoExistente.cliente_nome || '' : ''
+  )
 
   // form de item — a busca de produto roda no servidor, com % como curinga
   const [buscaProd, setBuscaProd] = useState('')
@@ -275,6 +279,13 @@ function ModalNovo({ user, perfil, clientes, condicoes, orcamentoExistente, reca
 
   function escolherCliente(c) {
     setClienteId(c.id)
+    setClienteAvulso('')
+    setBuscaCli('')
+  }
+
+  function usarClienteAvulso() {
+    setClienteAvulso(buscaCli.trim())
+    setClienteId('')
     setBuscaCli('')
   }
 
@@ -313,13 +324,13 @@ function ModalNovo({ user, perfil, clientes, condicoes, orcamentoExistente, reca
   const total = itens.reduce((s, it) => s + (Number(it.subtotal) || 0), 0)
 
   async function salvar() {
-    if (!clienteId) { toast('Selecione um cliente'); return }
+    if (!clienteId && !clienteAvulso.trim()) { toast('Selecione um cliente ou informe o nome'); return }
     if (itens.length === 0) { toast('Adicione ao menos um item'); return }
     setSalvando(true)
-    const clienteNome = nomeClienteSel || 'Cliente'
+    const clienteNome = clienteAvulso.trim() || nomeClienteSel || 'Cliente'
     const dadosOrc = {
       total,
-      cliente_id: clienteId,
+      cliente_id: clienteId || null,
       cliente_nome: clienteNome,
       observacao,
       validade_dias: Number(validadeDias) || 7,
@@ -362,13 +373,15 @@ function ModalNovo({ user, perfil, clientes, condicoes, orcamentoExistente, reca
     <Modal titulo={edicao ? `Editar orçamento Nº${orcamentoExistente.numero}` : 'Novo orçamento'} onClose={onClose}>
       <div className="field">
         <label>Cliente (digite para buscar)</label>
-        {clienteId ? (
+        {clienteId || clienteAvulso ? (
           <div className="list-item">
             <div className="grow">
-              <div className="title">{nomeClienteSel || 'Cliente'}</div>
-              {clienteSel?.cnpj && <div className="sub">{formataCpfCnpj(clienteSel.cnpj)}</div>}
+              <div className="title">{clienteAvulso || nomeClienteSel || 'Cliente'}</div>
+              {clienteAvulso
+                ? <div className="sub">Sem cadastro (só o nome no orçamento)</div>
+                : clienteSel?.cnpj && <div className="sub">{formataCpfCnpj(clienteSel.cnpj)}</div>}
             </div>
-            <button className="btn-ghost" onClick={() => setClienteId('')} aria-label="Trocar cliente">✕</button>
+            <button className="btn-ghost" onClick={() => { setClienteId(''); setClienteAvulso('') }} aria-label="Trocar cliente">✕</button>
           </div>
         ) : (
           <>
@@ -382,9 +395,6 @@ function ModalNovo({ user, perfil, clientes, condicoes, orcamentoExistente, reca
               />
               <button className="btn btn-outline btn-sm" onClick={() => setNovoCliente(true)}>+ Novo</button>
             </div>
-            {buscaCli.trim() && clientesFiltrados.length === 0 && (
-              <div className="empty">Nenhum cliente encontrado.</div>
-            )}
             {clientesFiltrados.map((c) => (
               <div key={c.id} className="list-item" style={{ cursor: 'pointer' }} onClick={() => escolherCliente(c)}>
                 <div className="grow">
@@ -396,6 +406,14 @@ function ModalNovo({ user, perfil, clientes, condicoes, orcamentoExistente, reca
                 </div>
               </div>
             ))}
+            {buscaCli.trim() && (
+              <div className="list-item" style={{ cursor: 'pointer' }} onClick={usarClienteAvulso}>
+                <div className="grow">
+                  <div className="title">➕ Usar “{buscaCli.trim()}” sem cadastro</div>
+                  <div className="sub">Orçamento só com o nome — dá para cadastrar o cliente depois</div>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
