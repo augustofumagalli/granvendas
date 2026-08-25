@@ -27,7 +27,8 @@ export default function Produtos() {
   // então com o catálogo inteiro não dá para filtrar só no navegador).
   async function carregar(termo = busca) {
     setCarregando(true)
-    let q = supabase.from('produtos').select('*', { count: 'exact' }).order('descricao').limit(LIMITE_LISTA)
+    // produtos inativos no SiSCom não aparecem no app
+    let q = supabase.from('produtos').select('*', { count: 'exact' }).eq('ativo', true).order('descricao').limit(LIMITE_LISTA)
     const padrao = curingaParaIlike(termo)
     if (padrao) q = q.or(`descricao.ilike."${padrao}",codigo.ilike."${padrao}"`)
     const { data, count, error } = await q
