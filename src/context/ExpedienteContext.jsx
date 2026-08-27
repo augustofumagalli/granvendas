@@ -40,6 +40,7 @@ export function ExpedienteProvider({ children }) {
   const { user } = useAuth()
   const [ligada, setLigada] = useState(false)
   const [kmHoje, setKmHoje] = useState(() => carregarLocal()?.km || 0)
+  const [pausa, setPausa] = useState(() => carregarLocal()?.pausa || null)
   const [ultimaPos, setUltimaPos] = useState(null)
   const [config, setConfig] = useState({ hora_inicio: '08:00', hora_fim: '18:00', meta_visitas: 8 })
   const [avisoFimExpediente, setAvisoFimExpediente] = useState(false)
@@ -51,6 +52,7 @@ export function ExpedienteProvider({ children }) {
   const ligadaRef = useRef(false)
   const bufferRef = useRef([])          // pontos ainda não gravados no banco
   const ultimoGravadoRef = useRef(null) // último ponto gravado (p/ espaçar o trajeto)
+  const pausaRef = useRef(carregarLocal()?.pausa || null)
 
   // carrega config do vendedor
   useEffect(() => {
@@ -60,7 +62,7 @@ export function ExpedienteProvider({ children }) {
   }, [user])
 
   const salvarLocal = useCallback(() => {
-    localStorage.setItem(CHAVE, JSON.stringify({ dia: hoje(), km: kmRef.current, ultima: posRef.current }))
+    localStorage.setItem(CHAVE, JSON.stringify({ dia: hoje(), km: kmRef.current, ultima: posRef.current, pausa: pausaRef.current }))
   }, [])
 
   // Envia os pontos acumulados para o banco (em lote). Em caso de erro, devolve ao buffer.
@@ -95,6 +97,7 @@ export function ExpedienteProvider({ children }) {
 
   // Trata cada leitura do GPS
   const aoPosicionar = useCallback((p) => {
+    if (pausaRef.current) return // em pausa (almoço/particular): não conta KM nem grava trajeto
     const acc = p.coords.accuracy
     if (acc != null && acc > ACC_MAX_M) return // leitura ruim: ignora
     const nova = { lat: p.coords.latitude, lng: p.coords.longitude, t: p.timestamp || Date.now() }
@@ -139,7 +142,43 @@ export function ExpedienteProvider({ children }) {
     )
   }, [aoPosicionar])
 
+  // registra o fim de uma pausa em aberto
+  const fecharPausa = useCallback(async () => {
+    const p = pausaRef.current
+    if (!p) return
+    pausaRef.current = null
+    setPausa(null)
+    if (user && p.id) {
+      await supabase.from('rota_pausas').update({ fim: new Date().toISOString() }).eq('id', p.id)
+    }
+  }, [user])
+
+  const pausar = useCallback(async (tipo) => {
+    if (!user || pausaRef.current || !ligadaRef.current) return
+    const inicio = new Date().toISOString()
+    const { data } = await supabase
+      .from('rota_pausas')
+      .insert({ perfil_id: user.id, data: hoje(), tipo, inicio })
+      .select()
+      .single()
+    const p = { id: data?.id || null, tipo, inicio }
+    pausaRef.current = p
+    setPausa(p)
+    // zera a âncora: o deslocamento durante a pausa não conta
+    posRef.current = null
+    ultimoGravadoRef.current = null
+    salvarLocal()
+  }, [user, salvarLocal])
+
+  const retomar = useCallback(async () => {
+    await fecharPausa()
+    posRef.current = null
+    ultimoGravadoRef.current = null
+    salvarLocal()
+  }, [fecharPausa, salvarLocal])
+
   const desligar = useCallback(async (motivo = 'manual') => {
+    await fecharPausa()
     if (watchId.current != null) { navigator.geolocation.clearWatch(watchId.current); watchId.current = null }
     soltarWakeLock()
     setLigada(false)
@@ -154,7 +193,7 @@ export function ExpedienteProvider({ children }) {
         { onConflict: 'perfil_id,data' }
       )
     }
-  }, [user, salvarLocal, flushPontos, soltarWakeLock])
+  }, [user, salvarLocal, flushPontos, soltarWakeLock, fecharPausa])
 
   const ligar = useCallback(() => {
     if (!navigator.geolocation) { alert('GPS não disponível neste dispositivo.'); return }
@@ -206,6 +245,6 @@ export function ExpedienteProvider({ children }) {
     return () => clearInterval(t)
   }, [ligada, config.hora_fim])
 
-  const valor = { ligada, ligar, desligar, kmHoje, ultimaPos, config, setConfig, avisoFimExpediente, setAvisoFimExpediente }
+  const valor = { ligada, ligar, desligar, kmHoje, ultimaPos, config, setConfig, avisoFimExpediente, setAvisoFimExpediente, pausa, pausar, retomar }
   return <Ctx.Provider value={valor}>{children}</Ctx.Provider>
 }

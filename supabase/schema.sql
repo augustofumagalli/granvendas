@@ -229,6 +229,20 @@ create policy "visitas_exclui_gestor" on visitas for delete using (public.is_ges
 create policy "rotas_proprio" on rotas for all using (auth.uid() = perfil_id) with check (auth.uid() = perfil_id);
 create policy "rota_pontos_proprio" on rota_pontos for all using (auth.uid() = perfil_id) with check (auth.uid() = perfil_id);
 
+-- Pausas do expediente (almoço/particular): KM não conta durante a pausa
+create table if not exists rota_pausas (
+  id uuid primary key default gen_random_uuid(),
+  perfil_id uuid references perfis(id) on delete cascade,
+  data date not null,
+  tipo text not null, -- almoco | particular
+  inicio timestamptz not null default now(),
+  fim timestamptz
+);
+alter table rota_pausas enable row level security;
+create policy "pausas_le_dono_ou_gestor" on rota_pausas for select using (auth.uid() = perfil_id or public.is_gestor());
+create policy "pausas_insere_proprio" on rota_pausas for insert with check (auth.uid() = perfil_id);
+create policy "pausas_edita_proprio" on rota_pausas for update using (auth.uid() = perfil_id) with check (auth.uid() = perfil_id);
+
 -- =====================================================================
 -- STORAGE: bucket para fotos das visitas
 -- =====================================================================

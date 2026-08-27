@@ -8,7 +8,9 @@ import { brl, numero, data, hoje } from '../lib/format'
 
 export default function Home() {
   const { user, perfil } = useAuth()
-  const { ligada, ligar, desligar, kmHoje, config, avisoFimExpediente, setAvisoFimExpediente } = useExpediente()
+  const { ligada, ligar, desligar, kmHoje, config, avisoFimExpediente, setAvisoFimExpediente, pausa, pausar, retomar } = useExpediente()
+
+  const horaDe = (iso) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 
   const [loading, setLoading] = useState(true)
   const [visitasHoje, setVisitasHoje] = useState(0)
@@ -65,10 +67,24 @@ export default function Home() {
 
       <div className="card mb center">
         {ligada ? (
-          <>
-            <button className="btn btn-azul" onClick={() => desligar('manual')}>⏸ Desligar plataforma</button>
-            <div className="mt mono">{numero(kmHoje, 1)} km rodados hoje</div>
-          </>
+          pausa ? (
+            <>
+              <div className="badge badge-laranja mb">
+                ⏸ Em pausa ({pausa.tipo === 'almoco' ? 'almoço' : 'particular'}) desde {horaDe(pausa.inicio)}
+              </div>
+              <button className="btn btn-verde" onClick={retomar}>▶ Retomar trabalho</button>
+              <div className="muted mt">Durante a pausa os KM não contam e o trajeto não é gravado.</div>
+            </>
+          ) : (
+            <>
+              <button className="btn btn-azul" onClick={() => desligar('manual')}>⏸ Desligar plataforma</button>
+              <div className="row mt">
+                <button className="btn btn-outline btn-sm grow" onClick={() => pausar('almoco')}>🍽 Pausa almoço</button>
+                <button className="btn btn-outline btn-sm grow" onClick={() => pausar('particular')}>⏸ Pausa particular</button>
+              </div>
+              <div className="mt mono">{numero(kmHoje, 1)} km rodados hoje</div>
+            </>
+          )
         ) : (
           <button className="btn btn-verde" onClick={() => ligar()}>▶ Ligar plataforma</button>
         )}
