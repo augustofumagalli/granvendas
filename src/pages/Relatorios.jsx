@@ -48,6 +48,12 @@ const CHIPS = [
   { id: 'mes', label: 'Mês' },
 ]
 
+// "Seg", "Ter"... a partir de YYYY-MM-DD
+function diaSemana(dia) {
+  const s = new Date(dia + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
 export default function Relatorios() {
   const { user } = useAuth()
   const toast = useToast()
@@ -237,42 +243,44 @@ export default function Relatorios() {
           </div>
 
           <div className="card">
-            <div className="section-title">Resumo diário</div>
-            <div className="muted mb">
-              Enviados: {brl(valorEnviado)} · Fechados: {brl(valorFechado)}
+            <div className="between mb">
+              <div className="section-title" style={{ margin: 0 }}>Resumo diário</div>
+              <div className="muted" style={{ fontSize: 12, textAlign: 'right' }}>
+                Enviados: {brl(valorEnviado)}<br />Fechados: {brl(valorFechado)}
+              </div>
             </div>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr>
-                  <th style={{ textAlign: 'left' }}>Data</th>
-                  <th style={{ textAlign: 'right' }}>Visitas</th>
-                  <th style={{ textAlign: 'right' }}>Orç. enviados</th>
-                  <th style={{ textAlign: 'right' }}>Orç. fechados</th>
-                  <th style={{ textAlign: 'right' }}>KM</th>
-                  <th style={{ textAlign: 'center' }}>Rota</th>
-                </tr>
-              </thead>
-              <tbody>
-                {resumoDiario.map((r) => (
-                  <tr key={r.dia}>
-                    <td>{fmtData(r.dia)}</td>
-                    <td className="mono" style={{ textAlign: 'right' }}>{numero(r.visitas)}</td>
-                    <td className="mono" style={{ textAlign: 'right' }}>{numero(r.enviados)}</td>
-                    <td className="mono" style={{ textAlign: 'right' }}>{numero(r.fechados)}</td>
-                    <td className="mono" style={{ textAlign: 'right' }}>{numero(r.km, 1)}</td>
-                    <td style={{ textAlign: 'center' }}>
-                      {(r.km > 0 || r.visitas > 0) ? (
-                        <button className="btn btn-outline btn-sm" onClick={() => abrirRota(r.dia)}>
-                          🗺️ Ver
-                        </button>
-                      ) : (
-                        <span className="muted">—</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {resumoDiario.map((r) => {
+              const vazio = r.visitas === 0 && r.enviados === 0 && r.fechados === 0 && r.km === 0
+              const ehHoje = r.dia === diaLocal(new Date())
+              return (
+                <div key={r.dia} className="list-item" style={vazio ? { opacity: 0.45 } : undefined}>
+                  <div className="grow">
+                    <div className="title">
+                      {ehHoje ? 'Hoje' : diaSemana(r.dia)} · {fmtData(r.dia)}
+                    </div>
+                    <div className="sub">
+                      {vazio
+                        ? 'Sem atividade'
+                        : [
+                            r.visitas > 0 && `${numero(r.visitas)} visita${r.visitas > 1 ? 's' : ''}`,
+                            r.enviados > 0 && `${numero(r.enviados)} orç. enviado${r.enviados > 1 ? 's' : ''}`,
+                            r.fechados > 0 && `${numero(r.fechados)} fechado${r.fechados > 1 ? 's' : ''}`,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ') || 'Só deslocamento'}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div className="mono">{r.km > 0 ? `${numero(r.km, 1)} km` : '—'}</div>
+                    {(r.km > 0 || r.visitas > 0) && (
+                      <button className="btn btn-outline btn-sm mt" onClick={() => abrirRota(r.dia)}>
+                        🗺️ Rota
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </>
       )}

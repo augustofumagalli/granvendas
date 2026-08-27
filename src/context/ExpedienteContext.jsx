@@ -23,7 +23,7 @@ const CHAVE = 'granvendas_rota'
 const ACC_MAX_M = 120        // descarta leituras com erro > 120 m
 const MOV_MIN_KM = 0.01      // ignora tremor de GPS parado (< 10 m)
 const VEL_MAX_KMH = 200      // descarta "saltos" impossíveis (glitch de GPS)
-const DIST_GRAVA_KM = 0.03   // só grava um ponto do trajeto a cada ~30 m
+const DIST_GRAVA_KM = 0.02   // só grava um ponto do trajeto a cada ~20 m
 const LOTE_PONTOS = 8        // envia os pontos ao banco em lotes
 
 function carregarLocal() {
