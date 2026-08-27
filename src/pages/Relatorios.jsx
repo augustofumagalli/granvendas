@@ -3,8 +3,57 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { brl, numero, data as fmtData } from '../lib/format'
+import { distanciaKm } from '../lib/geo'
 import Modal from '../components/Modal'
 import MapaRota from '../components/MapaRota'
+
+const PARADA_MIN_MINUTOS = 10   // parado por 10+ min vira "parada"
+const PARADA_RAIO_KM = 0.2      // ...desde que não tenha se deslocado mais que isso
+const PERTO_KM = 0.15           // "perto" de um cliente/visita = 150 m
+
+const hm = (t) => new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+
+// O GPS só grava ponto quando há movimento; parado, abre-se um "vão" no tempo
+// entre dois pontos quase no mesmo lugar — isso é uma parada.
+function detectarParadas(pontos) {
+  const ps = (pontos || [])
+    .filter((p) => p.lat != null && p.lng != null && p.capturado_em)
+    .map((p) => ({ lat: p.lat, lng: p.lng, t: new Date(p.capturado_em).getTime() }))
+  const out = []
+  for (let i = 1; i < ps.length; i++) {
+    const a = ps[i - 1]
+    const b = ps[i]
+    const minutos = (b.t - a.t) / 60000
+    if (minutos >= PARADA_MIN_MINUTOS && distanciaKm(a.lat, a.lng, b.lat, b.lng) < PARADA_RAIO_KM) {
+      out.push({ lat: a.lat, lng: a.lng, inicio: a.t, fim: b.t, minutos: Math.round(minutos) })
+    }
+  }
+  return out
+}
+
+function classificarParada(p, visitas, pausas, clientesGeo) {
+  const visita = (visitas || []).find(
+    (v) =>
+      (v.lat != null && distanciaKm(p.lat, p.lng, v.lat, v.lng) < PERTO_KM) ||
+      (v.criado_em && new Date(v.criado_em).getTime() >= p.inicio - 10 * 60000 && new Date(v.criado_em).getTime() <= p.fim + 10 * 60000)
+  )
+  if (visita) return { rotulo: `Visita — ${visita.cliente_nome || 'cliente'}`, tipo: 'visita' }
+
+  const pausa = (pausas || []).find((pa) => {
+    const ini = new Date(pa.inicio).getTime()
+    const fim = pa.fim ? new Date(pa.fim).getTime() : ini + 60 * 60000
+    return p.inicio < fim && p.fim > ini
+  })
+  if (pausa) return { rotulo: pausa.tipo === 'almoco' ? 'Almoço (pausa registrada)' : 'Pausa particular (registrada)', tipo: 'pausa' }
+
+  const cliente = (clientesGeo || []).find((c) => distanciaKm(p.lat, p.lng, c.lat, c.lng) < PERTO_KM)
+  if (cliente) return { rotulo: `No cliente ${cliente.razao_social || cliente.nome_fantasia} (sem visita registrada)`, tipo: 'cliente' }
+
+  const hora = new Date(p.inicio).getHours()
+  if (hora >= 11 && hora < 14 && p.minutos >= 30) return { rotulo: 'Provável almoço', tipo: 'almoco' }
+
+  return { rotulo: 'Parada não identificada', tipo: 'desconhecida' }
+}
 
 // YYYY-MM-DD no horário local
 function diaLocal(d) {
@@ -70,6 +119,7 @@ export default function Relatorios() {
   const [carregandoRota, setCarregandoRota] = useState(false)
   const [pontosDia, setPontosDia] = useState([])
   const [visitasDia, setVisitasDia] = useState([])
+  const [paradasDia, setParadasDia] = useState([])
 
   const { inicioDia, fimDia } = useMemo(() => calcularPeriodo(periodo), [periodo])
 
@@ -78,7 +128,8 @@ export default function Relatorios() {
     setCarregandoRota(true)
     setPontosDia([])
     setVisitasDia([])
-    const [rPontos, rVisitas] = await Promise.all([
+    setParadasDia([])
+    const [rPontos, rVisitas, rPausas, rClientes] = await Promise.all([
       supabase
         .from('rota_pontos')
         .select('lat, lng, capturado_em')
@@ -87,13 +138,50 @@ export default function Relatorios() {
         .order('capturado_em', { ascending: true }),
       supabase
         .from('visitas')
-        .select('lat, lng, cliente_nome')
+        .select('lat, lng, cliente_nome, criado_em')
         .eq('perfil_id', user.id)
         .eq('data', dia),
+      supabase
+        .from('rota_pausas')
+        .select('tipo, inicio, fim')
+        .eq('perfil_id', user.id)
+        .eq('data', dia)
+        .order('inicio', { ascending: true }),
+      supabase
+        .from('clientes')
+        .select('razao_social, nome_fantasia, lat, lng')
+        .not('lat', 'is', null),
     ])
     if (rPontos.error || rVisitas.error) toast('Erro ao carregar a rota')
-    setPontosDia(rPontos.data || [])
-    setVisitasDia((rVisitas.data || []).filter((v) => v.lat != null && v.lng != null))
+    const pontos = rPontos.data || []
+    const visitas = rVisitas.data || []
+    const pausas = rPausas.data || []
+    const clientesGeo = rClientes.data || []
+
+    // paradas detectadas pelo GPS, classificadas
+    const paradas = detectarParadas(pontos).map((p) => ({ ...p, ...classificarParada(p, visitas, pausas, clientesGeo) }))
+    // pausas registradas que não coincidiram com nenhuma parada do GPS entram na linha do tempo mesmo assim
+    pausas.forEach((pa) => {
+      const ini = new Date(pa.inicio).getTime()
+      const fim = pa.fim ? new Date(pa.fim).getTime() : null
+      const coberta = paradas.some((p) => p.tipo === 'pausa' && p.inicio < (fim ?? ini + 3600000) && p.fim > ini)
+      if (!coberta) {
+        paradas.push({
+          lat: null,
+          lng: null,
+          inicio: ini,
+          fim: fim ?? ini,
+          minutos: fim ? Math.round((fim - ini) / 60000) : null,
+          rotulo: pa.tipo === 'almoco' ? 'Almoço (pausa registrada)' : 'Pausa particular (registrada)',
+          tipo: 'pausa',
+        })
+      }
+    })
+    paradas.sort((a, b) => a.inicio - b.inicio)
+
+    setPontosDia(pontos)
+    setVisitasDia(visitas.filter((v) => v.lat != null && v.lng != null))
+    setParadasDia(paradas)
     setCarregandoRota(false)
   }
 
@@ -293,12 +381,35 @@ export default function Relatorios() {
             <div className="empty">Sem trajeto ou visitas com localização neste dia.</div>
           ) : (
             <>
-              <MapaRota pontos={pontosDia} visitas={visitasDia} />
+              <MapaRota pontos={pontosDia} visitas={visitasDia} paradas={paradasDia.filter((p) => p.lat != null)} />
               <div className="muted mt">
                 {pontosDia.length > 0 ? `${numero(pontosDia.length)} pontos de trajeto` : 'Sem trajeto registrado'}
                 {' · '}
                 {numero(visitasDia.length)} visita(s) no mapa
               </div>
+
+              {paradasDia.length > 0 && (
+                <>
+                  <div className="section-title mt">Linha do tempo das paradas</div>
+                  {paradasDia.map((p, i) => (
+                    <div key={i} className="list-item">
+                      <div className="grow">
+                        <div className="title">
+                          {p.tipo === 'visita' ? '🟠 ' : p.tipo === 'pausa' ? '⏸ ' : p.tipo === 'cliente' ? '🏢 ' : p.tipo === 'almoco' ? '🍽 ' : '❓ '}
+                          {p.rotulo}
+                        </div>
+                        <div className="sub">
+                          {hm(p.inicio)}{p.fim && p.fim !== p.inicio ? `–${hm(p.fim)}` : ''}
+                          {p.minutos != null ? ` · ${numero(p.minutos)} min` : ' · em andamento'}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="muted mt" style={{ fontSize: 12 }}>
+                    Paradas detectadas pelo GPS (10+ min no mesmo lugar) cruzadas com visitas, pausas e clientes cadastrados.
+                  </div>
+                </>
+              )}
             </>
           )}
         </Modal>

@@ -15,6 +15,7 @@ import 'leaflet/dist/leaflet.css'
   props:
    - pontos:  [{ lat, lng }]  trajeto em ordem cronológica
    - visitas: [{ lat, lng, cliente_nome }]
+   - paradas: [{ lat, lng, rotulo, minutos }]  paradas detectadas (10+ min)
 */
 
 // Encaixa a sequência de pontos GPS nas ruas (map matching do OSRM).
@@ -38,7 +39,7 @@ async function trajetoNasRuas(linha) {
   return caminho
 }
 
-export default function MapaRota({ pontos = [], visitas = [] }) {
+export default function MapaRota({ pontos = [], visitas = [], paradas = [] }) {
   const el = useRef(null)
   const mapa = useRef(null)
 
@@ -78,6 +79,14 @@ export default function MapaRota({ pontos = [], visitas = [] }) {
       limites.push(linha[0])
     }
 
+    ;(paradas || []).forEach((p) => {
+      if (p.lat == null || p.lng == null) return
+      L.circleMarker([p.lat, p.lng], { radius: 6, weight: 2, color: '#fff', fillColor: '#7f8c8d', fillOpacity: 1 })
+        .addTo(map)
+        .bindPopup(`${p.rotulo || 'Parada'}${p.minutos != null ? ` · ${p.minutos} min` : ''}`)
+      limites.push([p.lat, p.lng])
+    })
+
     ;(visitas || []).forEach((v) => {
       if (v.lat == null || v.lng == null) return
       L.circleMarker([v.lat, v.lng], { radius: 8, weight: 2, color: '#fff', fillColor: '#F58220', fillOpacity: 1 })
@@ -96,7 +105,7 @@ export default function MapaRota({ pontos = [], visitas = [] }) {
     const t = setTimeout(() => map.invalidateSize(), 120)
 
     return () => { vivo = false; clearTimeout(t); map.remove(); mapa.current = null }
-  }, [pontos, visitas])
+  }, [pontos, visitas, paradas])
 
   return <div ref={el} style={{ width: '100%', height: 360, borderRadius: 12, overflow: 'hidden' }} />
 }
