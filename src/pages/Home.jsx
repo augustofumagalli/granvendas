@@ -69,18 +69,25 @@ export default function Home() {
         {ligada ? (
           pausa ? (
             <>
-              <div className="badge badge-laranja mb">
-                ⏸ Em pausa ({pausa.tipo === 'almoco' ? 'almoço' : 'particular'}) desde {horaDe(pausa.inicio)}
+              <div className={'badge mb ' + (pausa.tipo === 'visita' ? 'badge-verde' : 'badge-laranja')}>
+                {pausa.tipo === 'visita' ? '🤝 Em visita' : pausa.tipo === 'almoco' ? '🍽 Em almoço' : '⏸ Pausa particular'} desde {horaDe(pausa.inicio)}
               </div>
-              <button className="btn btn-verde" onClick={retomar}>▶ Retomar trabalho</button>
-              <div className="muted mt">Durante a pausa os KM não contam e o trajeto não é gravado.</div>
+              <button className="btn btn-verde" onClick={retomar}>
+                {pausa.tipo === 'visita' ? '🚗 Encerrar visita e seguir' : '▶ Retomar trabalho'}
+              </button>
+              <div className="muted mt">
+                {pausa.tipo === 'visita'
+                  ? 'A visita fica registrada na sua linha do tempo. Aproveite para registrar a visita com foto na aba Visitas.'
+                  : 'Durante a pausa os KM não contam e o trajeto não é gravado.'}
+              </div>
             </>
           ) : (
             <>
               <button className="btn btn-azul" onClick={() => desligar('manual')}>⏸ Desligar plataforma</button>
               <div className="row mt">
-                <button className="btn btn-outline btn-sm grow" onClick={() => pausar('almoco')}>🍽 Pausa almoço</button>
-                <button className="btn btn-outline btn-sm grow" onClick={() => pausar('particular')}>⏸ Pausa particular</button>
+                <button className="btn btn-outline btn-sm grow" onClick={() => pausar('visita')}>🤝 Em visita</button>
+                <button className="btn btn-outline btn-sm grow" onClick={() => pausar('almoco')}>🍽 Almoço</button>
+                <button className="btn btn-outline btn-sm grow" onClick={() => pausar('particular')}>⏸ Particular</button>
               </div>
               <div className="mt mono">{numero(kmHoje, 1)} km rodados hoje</div>
               {telaTravada && (
