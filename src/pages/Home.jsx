@@ -8,7 +8,7 @@ import { brl, numero, data, hoje } from '../lib/format'
 
 export default function Home() {
   const { user, perfil } = useAuth()
-  const { ligada, ligar, desligar, kmHoje, config, avisoFimExpediente, setAvisoFimExpediente, pausa, pausar, retomar } = useExpediente()
+  const { ligada, ligar, desligar, kmHoje, config, avisoFimExpediente, setAvisoFimExpediente, pausa, pausar, retomar, telaTravada } = useExpediente()
 
   const horaDe = (iso) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 
@@ -83,13 +83,16 @@ export default function Home() {
                 <button className="btn btn-outline btn-sm grow" onClick={() => pausar('particular')}>⏸ Pausa particular</button>
               </div>
               <div className="mt mono">{numero(kmHoje, 1)} km rodados hoje</div>
+              {telaTravada && (
+                <div className="badge badge-verde mt">🔆 Tela não apaga enquanto a plataforma estiver ligada</div>
+              )}
             </>
           )
         ) : (
           <button className="btn btn-verde" onClick={() => ligar()}>▶ Ligar plataforma</button>
         )}
         <div className="muted mt">
-          Ligue ao começar a rodar. Os KM só contam com a plataforma ligada (não conta o trajeto de casa).
+          Ligue ao começar a rodar e deixe o app aberto na tela (como o GPS do Maps). Os KM só contam com a plataforma ligada.
         </div>
       </div>
 

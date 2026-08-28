@@ -80,19 +80,32 @@ export function ExpedienteProvider({ children }) {
     if (error) bufferRef.current.unshift(...lote) // tenta de novo depois
   }, [user])
 
-  // Mantém a tela acordada para o navegador não suspender o GPS em segundo plano.
+  const [telaTravada, setTelaTravada] = useState(false)
+
+  // Mantém a tela acordada para o navegador não suspender o GPS (como o Maps
+  // navegando). Se o sistema soltar a trava, pedimos de novo sozinhos.
   const pedirWakeLock = useCallback(async () => {
     try {
       if ('wakeLock' in navigator && !wakeLock.current) {
         wakeLock.current = await navigator.wakeLock.request('screen')
-        wakeLock.current.addEventListener?.('release', () => { wakeLock.current = null })
+        setTelaTravada(true)
+        wakeLock.current.addEventListener?.('release', () => {
+          wakeLock.current = null
+          setTelaTravada(false)
+          // retoma a trava se a plataforma segue ligada e o app está visível
+          if (ligadaRef.current && document.visibilityState === 'visible') {
+            setTimeout(() => { pedirWakeLock() }, 500)
+          }
+        })
       }
-    } catch { /* Wake Lock indisponível: segue sem ela */ }
+    } catch { setTelaTravada(false) /* Wake Lock indisponível: segue sem ela */ }
   }, [])
 
   const soltarWakeLock = useCallback(() => {
+    ligadaRef.current = false // impede a retomada automática da trava
     try { wakeLock.current?.release?.() } catch { /* ignore */ }
     wakeLock.current = null
+    setTelaTravada(false)
   }, [])
 
   // Trata cada leitura do GPS
@@ -245,6 +258,6 @@ export function ExpedienteProvider({ children }) {
     return () => clearInterval(t)
   }, [ligada, config.hora_fim])
 
-  const valor = { ligada, ligar, desligar, kmHoje, ultimaPos, config, setConfig, avisoFimExpediente, setAvisoFimExpediente, pausa, pausar, retomar }
+  const valor = { ligada, ligar, desligar, kmHoje, ultimaPos, config, setConfig, avisoFimExpediente, setAvisoFimExpediente, pausa, pausar, retomar, telaTravada }
   return <Ctx.Provider value={valor}>{children}</Ctx.Provider>
 }
