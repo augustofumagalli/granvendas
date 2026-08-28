@@ -13,6 +13,9 @@ const PERTO_KM = 0.15           // "perto" de um cliente/visita = 150 m
 
 const hm = (t) => new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 
+const rotuloPausa = (tipo) =>
+  tipo === 'visita' ? 'Visita (marcada no botão)' : tipo === 'almoco' ? 'Almoço (pausa registrada)' : 'Pausa particular (registrada)'
+
 // O GPS só grava ponto quando há movimento; parado, abre-se um "vão" no tempo
 // entre dois pontos quase no mesmo lugar — isso é uma parada.
 function detectarParadas(pontos) {
@@ -44,7 +47,7 @@ function classificarParada(p, visitas, pausas, clientesGeo) {
     const fim = pa.fim ? new Date(pa.fim).getTime() : ini + 60 * 60000
     return p.inicio < fim && p.fim > ini
   })
-  if (pausa) return { rotulo: pausa.tipo === 'almoco' ? 'Almoço (pausa registrada)' : 'Pausa particular (registrada)', tipo: 'pausa' }
+  if (pausa) return { rotulo: rotuloPausa(pausa.tipo), tipo: pausa.tipo === 'visita' ? 'visita' : 'pausa' }
 
   const cliente = (clientesGeo || []).find((c) => distanciaKm(p.lat, p.lng, c.lat, c.lng) < PERTO_KM)
   if (cliente) return { rotulo: `No cliente ${cliente.razao_social || cliente.nome_fantasia} (sem visita registrada)`, tipo: 'cliente' }
@@ -172,8 +175,8 @@ export default function Relatorios() {
           inicio: ini,
           fim: fim ?? ini,
           minutos: fim ? Math.round((fim - ini) / 60000) : null,
-          rotulo: pa.tipo === 'almoco' ? 'Almoço (pausa registrada)' : 'Pausa particular (registrada)',
-          tipo: 'pausa',
+          rotulo: rotuloPausa(pa.tipo),
+          tipo: pa.tipo === 'visita' ? 'visita' : 'pausa',
         })
       }
     })
