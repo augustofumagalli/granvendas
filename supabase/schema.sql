@@ -243,6 +243,20 @@ create policy "pausas_le_dono_ou_gestor" on rota_pausas for select using (auth.u
 create policy "pausas_insere_proprio" on rota_pausas for insert with check (auth.uid() = perfil_id);
 create policy "pausas_edita_proprio" on rota_pausas for update using (auth.uid() = perfil_id) with check (auth.uid() = perfil_id);
 
+-- Roteiro do dia: sequência de clientes que o vendedor planeja visitar
+create table if not exists roteiro_itens (
+  id uuid primary key default gen_random_uuid(),
+  perfil_id uuid references perfis(id) on delete cascade,
+  data date not null,
+  cliente_id uuid references clientes(id) on delete cascade,
+  ordem int not null default 0,
+  visitado_em timestamptz,
+  criado_em timestamptz default now()
+);
+alter table roteiro_itens enable row level security;
+create policy "roteiro_le_dono_ou_gestor" on roteiro_itens for select using (auth.uid() = perfil_id or public.is_gestor());
+create policy "roteiro_escreve_proprio" on roteiro_itens for all using (auth.uid() = perfil_id) with check (auth.uid() = perfil_id);
+
 -- =====================================================================
 -- STORAGE: bucket para fotos das visitas
 -- =====================================================================

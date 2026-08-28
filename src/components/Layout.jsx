@@ -4,6 +4,7 @@ import { useExpediente } from '../context/ExpedienteContext'
 
 const itens = [
   { to: '/', ico: '🏠', label: 'Início', end: true },
+  { to: '/roteiro', ico: '🧭', label: 'Roteiro' },
   { to: '/orcamentos', ico: '📄', label: 'Orçamentos' },
   { to: '/visitas', ico: '📍', label: 'Visitas' },
   { to: '/produtos', ico: '📦', label: 'Produtos' },
