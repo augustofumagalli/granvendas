@@ -5,6 +5,7 @@ import { useToast } from '../context/ToastContext'
 import { useExpediente } from '../context/ExpedienteContext'
 import MapaNavegacao from '../components/MapaNavegacao'
 import { combinaCuringa, hoje, formataCpfCnpj } from '../lib/format'
+import { buscarCoordenadas } from '../lib/geo'
 
 /*
   Roteiro do dia: o vendedor monta a sequência de clientes que vai visitar.
@@ -108,6 +109,31 @@ export default function Roteiro() {
     carregar()
   }
 
+  const [localizando, setLocalizando] = useState(false)
+
+  // acha o ponto no mapa pelo endereço do SiSCom e grava no cadastro do cliente
+  async function localizarPorEndereco(item) {
+    const c = item.cliente
+    if (!c?.logradouro || !c?.municipio) {
+      toast('Cliente sem endereço completo no cadastro')
+      return
+    }
+    setLocalizando(true)
+    try {
+      const r = await buscarCoordenadas(endereco(c) + ', Brasil')
+      if (!r) {
+        toast('Endereço não encontrado no mapa — use "Usar minha localização" quando estiver lá')
+        return
+      }
+      const { error } = await supabase.from('clientes').update({ lat: r.lat, lng: r.lng }).eq('id', item.cliente_id)
+      if (error) { toast('Erro ao salvar a localização'); return }
+      toast('Localização encontrada pelo endereço!')
+      carregar()
+    } finally {
+      setLocalizando(false)
+    }
+  }
+
   const proximo = itens.find((i) => !i.visitado_em)
   const pendentes = itens.filter((i) => !i.visitado_em)
   const feitos = itens.filter((i) => i.visitado_em)
@@ -165,10 +191,19 @@ export default function Roteiro() {
                   }}
                 />
               ) : (
-                <div className="muted mb">
-                  Este cliente não tem localização salva — o mapa interno fica de fora, mas o Maps navega pelo endereço.
-                  (Dica: no cadastro do cliente, use “Usar minha localização” quando estiver lá.)
-                </div>
+                <>
+                  <div className="muted mb">
+                    Este cliente ainda não tem localização salva — busque pelo endereço abaixo para ver o mapa.
+                  </div>
+                  <button
+                    className="btn btn-outline mb"
+                    style={{ width: '100%' }}
+                    onClick={() => localizarPorEndereco(proximo)}
+                    disabled={localizando}
+                  >
+                    {localizando ? 'Buscando…' : '🔎 Localizar pelo endereço'}
+                  </button>
+                </>
               )}
 
               <div className="row mt">

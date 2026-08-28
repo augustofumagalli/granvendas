@@ -5,7 +5,7 @@ import { useToast } from '../context/ToastContext'
 import Modal from '../components/Modal'
 import ImportarClientes from '../components/ImportarClientes'
 import { soDigitos, formataCpfCnpj, formataTelefone } from '../lib/format'
-import { pegarPosicao } from '../lib/geo'
+import { pegarPosicao, buscarCoordenadas } from '../lib/geo'
 
 const VAZIO = {
   cnpj: '',
@@ -143,6 +143,33 @@ export default function Clientes() {
       toast('Não foi possível obter a localização')
     } finally {
       setGps(false)
+    }
+  }
+
+  const [buscandoEndereco, setBuscandoEndereco] = useState(false)
+
+  // acha o ponto no mapa a partir do endereço digitado (sem precisar estar lá)
+  async function localizarPorEndereco() {
+    if (!form.logradouro.trim() || !form.municipio.trim()) {
+      toast('Preencha ao menos logradouro e município')
+      return
+    }
+    setBuscandoEndereco(true)
+    try {
+      const texto = [form.logradouro, form.numero, form.bairro, form.municipio, form.uf, 'Brasil']
+        .filter((x) => String(x || '').trim())
+        .join(', ')
+      const r = await buscarCoordenadas(texto)
+      if (!r) {
+        toast('Endereço não encontrado no mapa — confira o cadastro ou capture no local')
+        return
+      }
+      setForm((f) => ({ ...f, lat: r.lat, lng: r.lng }))
+      toast('Localização encontrada pelo endereço')
+    } catch {
+      toast('Não foi possível buscar o endereço agora')
+    } finally {
+      setBuscandoEndereco(false)
     }
   }
 
@@ -345,8 +372,11 @@ export default function Clientes() {
           </div>
 
           <div className="row mt">
-            <button className="btn btn-outline grow" onClick={usarLocalizacao} disabled={gps}>
+            <button className="btn btn-outline grow" onClick={usarLocalizacao} disabled={gps || buscandoEndereco}>
               {gps ? <span className="spin" /> : '📍 Usar minha localização'}
+            </button>
+            <button className="btn btn-outline grow" onClick={localizarPorEndereco} disabled={gps || buscandoEndereco}>
+              {buscandoEndereco ? <span className="spin" /> : '🔎 Localizar pelo endereço'}
             </button>
           </div>
           {form.lat != null && form.lng != null && (

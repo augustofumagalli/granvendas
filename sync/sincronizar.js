@@ -190,7 +190,57 @@ function mesclar(chaveNome, chaveValor, novo, existente, campos) {
 
 // ---------- execução ----------
 
+// Geocodifica os clientes sem coordenada pelo endereço (Nominatim/OpenStreetMap,
+// 1 consulta por segundo, conforme a política do serviço). Não usa o Firebird.
+async function geocodificar() {
+  console.log('Conectando no Supabase...')
+  const sessao = await supaLogin()
+  const clientes = await supaGetTudo(
+    'clientes?select=id,razao_social,logradouro,numero,bairro,municipio,uf,lat&lat=is.null',
+    sessao
+  )
+  const comEndereco = clientes.filter((c) => txt(c.logradouro) && txt(c.municipio))
+  console.log(`${clientes.length} cliente(s) sem localização | ${comEndereco.length} com endereço para buscar`)
+
+  let achados = 0
+  const naoAchados = []
+  for (const c of comEndereco) {
+    const texto = [c.logradouro, c.numero, c.bairro, c.municipio, c.uf, 'Brasil']
+      .map((x) => String(x || '').trim())
+      .filter(Boolean)
+      .join(', ')
+    try {
+      const r = await fetch(
+        'https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&q=' + encodeURIComponent(texto),
+        { headers: { 'User-Agent': 'GranVendas/1.0 (+https://github.com/augustofumagalli/granvendas)' } }
+      )
+      const d = r.ok ? await r.json() : []
+      if (Array.isArray(d) && d.length) {
+        await supa(`clientes?id=eq.${c.id}`, 'PATCH', sessao, { lat: Number(d[0].lat), lng: Number(d[0].lon) })
+        achados++
+        console.log(`  ✓ ${String(c.razao_social || '').trim()}`)
+      } else {
+        naoAchados.push(c.razao_social)
+      }
+    } catch {
+      naoAchados.push(c.razao_social)
+    }
+    await new Promise((res) => setTimeout(res, 1200)) // ritmo exigido pelo Nominatim
+  }
+
+  console.log(`\nLocalizados: ${achados} | não encontrados: ${naoAchados.length}`)
+  if (naoAchados.length) {
+    console.log('Não encontrados (confira o endereço no SiSCom ou capture no local):')
+    naoAchados.slice(0, 30).forEach((n) => console.log('  - ' + String(n || '').trim()))
+  }
+}
+
 async function main() {
+  if (tem('--geocodificar')) {
+    await geocodificar()
+    return
+  }
+
   console.log(`Conectando no SiSCom (Firebird em ${fbOpts.host})...`)
   const aviso = setTimeout(() => {
     console.log(`Ainda tentando... o servidor ${fbOpts.host} está acessível? (teste: o drive de rede do SiSCom abre no Explorador?)`)
