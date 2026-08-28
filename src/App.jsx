@@ -7,6 +7,7 @@ import Produtos from './pages/Produtos'
 import Clientes from './pages/Clientes'
 import Orcamentos from './pages/Orcamentos'
 import Visitas from './pages/Visitas'
+import Roteiro from './pages/Roteiro'
 import Relatorios from './pages/Relatorios'
 import Configuracoes from './pages/Configuracoes'
 import Equipe from './pages/Equipe'
@@ -28,6 +29,7 @@ export default function App() {
       <Route path="/clientes" element={<Protegida><Clientes /></Protegida>} />
       <Route path="/orcamentos" element={<Protegida><Orcamentos /></Protegida>} />
       <Route path="/visitas" element={<Protegida><Visitas /></Protegida>} />
+      <Route path="/roteiro" element={<Protegida><Roteiro /></Protegida>} />
       <Route path="/relatorios" element={<Protegida><Relatorios /></Protegida>} />
       <Route path="/configuracoes" element={<Protegida><Configuracoes /></Protegida>} />
       <Route path="/equipe" element={<Protegida><Equipe /></Protegida>} />
