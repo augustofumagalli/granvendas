@@ -49,6 +49,10 @@ que já está preenchido no app (GPS, observação etc.).
    produto para conferir.
 3. Ensaio sem gravar nada: `node sincronizar.js --teste`
 4. Valendo: `node sincronizar.js` (ou `--so-clientes` / `--so-produtos`)
+5. Uma vez (ou quando quiser): `node sincronizar.js --geocodificar` — acha a
+   localização no mapa dos clientes sem coordenada pelo endereço
+   (Nominatim/OpenStreetMap, 1 consulta/segundo — a carteira toda leva
+   alguns minutos). Habilita o GPS do Roteiro para esses clientes.
 
 Observações:
 - Clientes pessoa física (CPF) e sem CNPJ ficam de fora por enquanto (o app
