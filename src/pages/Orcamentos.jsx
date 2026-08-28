@@ -321,6 +321,18 @@ function ModalNovo({ user, perfil, clientes, condicoes, orcamentoExistente, reca
     setItens((atual) => atual.filter((_, idx) => idx !== i))
   }
 
+  // edita qtd/preço de um item já adicionado, recalculando o subtotal
+  function atualizarItem(i, campo, valor) {
+    setItens((atual) =>
+      atual.map((it, idx) => {
+        if (idx !== i) return it
+        const novo = { ...it, [campo]: valor }
+        novo.subtotal = (Number(novo.quantidade) || 0) * (Number(novo.preco_unit) || 0)
+        return novo
+      })
+    )
+  }
+
   const total = itens.reduce((s, it) => s + (Number(it.subtotal) || 0), 0)
 
   async function salvar() {
@@ -357,9 +369,9 @@ function ModalNovo({ user, perfil, clientes, condicoes, orcamentoExistente, reca
       produto_id: it.produto_id,
       descricao: it.descricao,
       unidade: it.unidade || null,
-      quantidade: it.quantidade,
-      preco_unit: it.preco_unit,
-      subtotal: it.subtotal,
+      quantidade: Number(it.quantidade) || 0,
+      preco_unit: Number(it.preco_unit) || 0,
+      subtotal: (Number(it.quantidade) || 0) * (Number(it.preco_unit) || 0),
     }))
     const { error: errItens } = await supabase.from('orcamento_itens').insert(linhas)
 
@@ -510,8 +522,27 @@ function ModalNovo({ user, perfil, clientes, condicoes, orcamentoExistente, reca
           <div key={i} className="list-item">
             <div className="grow">
               <div className="title">{it.descricao}</div>
-              <div className="sub">
-                {numero(it.quantidade)} {it.unidade || ''} × {brl(it.preco_unit)} = {brl(it.subtotal)}
+              <div className="row mt" style={{ alignItems: 'center', gap: 6 }}>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={it.quantidade}
+                  onChange={(e) => atualizarItem(i, 'quantidade', e.target.value)}
+                  style={{ maxWidth: 74 }}
+                  aria-label="Quantidade"
+                />
+                <span className="muted">{it.unidade || 'x'} ×</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={it.preco_unit}
+                  onChange={(e) => atualizarItem(i, 'preco_unit', e.target.value)}
+                  style={{ maxWidth: 100 }}
+                  aria-label="Preço unitário"
+                />
+                <span className="mono">= {brl(it.subtotal)}</span>
               </div>
             </div>
             <button className="btn-ghost" onClick={() => removerItem(i)} aria-label="Remover">✕</button>
