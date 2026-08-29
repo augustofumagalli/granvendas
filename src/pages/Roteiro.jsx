@@ -137,6 +137,18 @@ export default function Roteiro() {
     carregar()
   }
 
+  async function limparRoteiro() {
+    if (!window.confirm('Limpar todo o roteiro de hoje?')) return
+    const { error } = await supabase
+      .from('roteiro_itens')
+      .delete()
+      .eq('perfil_id', user.id)
+      .eq('data', hoje())
+    if (error) { toast('Erro ao limpar o roteiro'); return }
+    toast('Roteiro limpo')
+    carregar()
+  }
+
   async function mover(item, direcao) {
     const pendentes = itens.filter((i) => !i.visitado_em)
     const idx = pendentes.findIndex((i) => i.id === item.id)
@@ -272,8 +284,18 @@ export default function Roteiro() {
         <>
           {proximo && dadosProximo && (
             <div className="card mb">
-              <div className="section-title">
-                Próximo: {dadosProximo.nome}{dadosProximo.avulso ? ' (avulso)' : ''}
+              <div className="between">
+                <div className="section-title" style={{ margin: 0 }}>
+                  Próximo: {dadosProximo.nome}{dadosProximo.avulso ? ' (avulso)' : ''}
+                </div>
+                <button
+                  className="btn-ghost"
+                  onClick={() => remover(proximo)}
+                  aria-label="Remover do roteiro"
+                  title="Remover do roteiro"
+                >
+                  ✕
+                </button>
               </div>
               {dadosProximo.endereco && <div className="muted mb">{dadosProximo.endereco}</div>}
 
@@ -324,6 +346,16 @@ export default function Roteiro() {
               ))}
             </>
           )}
+
+          <div className="row mt mb">
+            <button
+              className="btn btn-outline btn-sm"
+              style={{ color: '#c0392b', borderColor: '#e6b0aa' }}
+              onClick={limparRoteiro}
+            >
+              🗑 Limpar roteiro do dia
+            </button>
+          </div>
 
           {feitos.length > 0 && (
             <>
