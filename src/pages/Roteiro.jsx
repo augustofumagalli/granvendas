@@ -17,8 +17,30 @@ import { buscarCoordenadas } from '../lib/geo'
 const endereco = (c) =>
   [c?.logradouro, c?.numero, c?.bairro, c?.municipio, c?.uf].filter(Boolean).join(', ')
 
-function linkMaps(c) {
-  const destino = c?.lat != null && c?.lng != null ? `${c.lat},${c.lng}` : endereco(c)
+// dados exibíveis de um item do roteiro: cliente cadastrado ou endereço avulso
+function dadosItem(i) {
+  if (i.cliente) {
+    return {
+      nome: i.cliente.razao_social || i.cliente.nome_fantasia || 'Cliente',
+      endereco: endereco(i.cliente),
+      lat: i.cliente.lat,
+      lng: i.cliente.lng,
+      sub: [i.cliente.municipio, i.cliente.uf].filter(Boolean).join('/'),
+      avulso: false,
+    }
+  }
+  return {
+    nome: i.nome || 'Endereço avulso',
+    endereco: i.endereco || '',
+    lat: i.lat,
+    lng: i.lng,
+    sub: i.endereco || '',
+    avulso: true,
+  }
+}
+
+function linkMaps(d) {
+  const destino = d.lat != null && d.lng != null ? `${d.lat},${d.lng}` : d.endereco
   return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destino)}&travelmode=driving`
 }
 
@@ -38,7 +60,7 @@ export default function Roteiro() {
     const [rItens, rClientes] = await Promise.all([
       supabase
         .from('roteiro_itens')
-        .select('id, cliente_id, ordem, visitado_em')
+        .select('id, cliente_id, nome, endereco, lat, lng, ordem, visitado_em')
         .eq('perfil_id', user.id)
         .eq('data', hoje())
         .order('ordem', { ascending: true }),
@@ -76,6 +98,39 @@ export default function Roteiro() {
     carregar()
   }
 
+  // endereço avulso: destino sem cadastro (prospect, obra, galpão novo…)
+  const [mostrarAvulso, setMostrarAvulso] = useState(false)
+  const [avNome, setAvNome] = useState('')
+  const [avEndereco, setAvEndereco] = useState('')
+  const [adicionandoAvulso, setAdicionandoAvulso] = useState(false)
+
+  async function adicionarAvulso() {
+    if (!avEndereco.trim()) { toast('Digite o endereço'); return }
+    setAdicionandoAvulso(true)
+    try {
+      const r = await buscarCoordenadas(avEndereco.trim() + ', Brasil')
+      const ordem = itens.length ? Math.max(...itens.map((i) => i.ordem)) + 1 : 1
+      const { error } = await supabase.from('roteiro_itens').insert({
+        perfil_id: user.id,
+        data: hoje(),
+        cliente_id: null,
+        nome: avNome.trim() || null,
+        endereco: avEndereco.trim(),
+        lat: r?.lat ?? null,
+        lng: r?.lng ?? null,
+        ordem,
+      })
+      if (error) { toast('Erro ao adicionar'); return }
+      toast(r ? 'Endereço localizado e adicionado ao roteiro' : 'Adicionado — não achei no mapa, mas o Maps navega pelo texto')
+      setAvNome('')
+      setAvEndereco('')
+      setMostrarAvulso(false)
+      carregar()
+    } finally {
+      setAdicionandoAvulso(false)
+    }
+  }
+
   async function remover(item) {
     const { error } = await supabase.from('roteiro_itens').delete().eq('id', item.id)
     if (error) { toast('Erro ao remover'); return }
@@ -111,21 +166,23 @@ export default function Roteiro() {
 
   const [localizando, setLocalizando] = useState(false)
 
-  // acha o ponto no mapa pelo endereço do SiSCom e grava no cadastro do cliente
+  // acha o ponto no mapa pelo endereço e grava (no cliente ou no item avulso)
   async function localizarPorEndereco(item) {
-    const c = item.cliente
-    if (!c?.logradouro || !c?.municipio) {
-      toast('Cliente sem endereço completo no cadastro')
+    const d = dadosItem(item)
+    if (!d.endereco) {
+      toast('Sem endereço completo para buscar')
       return
     }
     setLocalizando(true)
     try {
-      const r = await buscarCoordenadas(endereco(c) + ', Brasil')
+      const r = await buscarCoordenadas(d.endereco + ', Brasil')
       if (!r) {
         toast('Endereço não encontrado no mapa — use "Usar minha localização" quando estiver lá')
         return
       }
-      const { error } = await supabase.from('clientes').update({ lat: r.lat, lng: r.lng }).eq('id', item.cliente_id)
+      const { error } = item.cliente_id
+        ? await supabase.from('clientes').update({ lat: r.lat, lng: r.lng }).eq('id', item.cliente_id)
+        : await supabase.from('roteiro_itens').update({ lat: r.lat, lng: r.lng }).eq('id', item.id)
       if (error) { toast('Erro ao salvar a localização'); return }
       toast('Localização encontrada pelo endereço!')
       carregar()
@@ -135,6 +192,7 @@ export default function Roteiro() {
   }
 
   const proximo = itens.find((i) => !i.visitado_em)
+  const dadosProximo = proximo ? dadosItem(proximo) : null
   const pendentes = itens.filter((i) => !i.visitado_em)
   const feitos = itens.filter((i) => i.visitado_em)
 
@@ -171,29 +229,62 @@ export default function Roteiro() {
         ))}
       </div>
 
+      {!mostrarAvulso ? (
+        <button className="btn btn-outline btn-sm mb" onClick={() => setMostrarAvulso(true)}>
+          ➕ Endereço avulso (sem cadastro)
+        </button>
+      ) : (
+        <div className="card mb">
+          <div className="field">
+            <label>Nome/descrição (opcional)</label>
+            <input
+              type="text"
+              placeholder="Ex.: Prospect galpão azul"
+              value={avNome}
+              onChange={(e) => setAvNome(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label>Endereço</label>
+            <input
+              type="text"
+              placeholder="Rua, número, cidade"
+              value={avEndereco}
+              onChange={(e) => setAvEndereco(e.target.value)}
+            />
+          </div>
+          <div className="row">
+            <button className="btn btn-verde grow" onClick={adicionarAvulso} disabled={adicionandoAvulso}>
+              {adicionandoAvulso ? 'Buscando no mapa…' : '➕ Adicionar ao roteiro'}
+            </button>
+            <button className="btn btn-outline" onClick={() => setMostrarAvulso(false)} disabled={adicionandoAvulso}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
       {carregando ? (
         <div className="center"><div className="spin" /></div>
       ) : itens.length === 0 ? (
         <div className="empty">Monte seu roteiro: busque os clientes acima na ordem em que pretende visitar.</div>
       ) : (
         <>
-          {proximo && (
+          {proximo && dadosProximo && (
             <div className="card mb">
-              <div className="section-title">Próximo: {proximo.cliente?.razao_social || proximo.cliente?.nome_fantasia || 'Cliente'}</div>
-              {endereco(proximo.cliente) && <div className="muted mb">{endereco(proximo.cliente)}</div>}
+              <div className="section-title">
+                Próximo: {dadosProximo.nome}{dadosProximo.avulso ? ' (avulso)' : ''}
+              </div>
+              {dadosProximo.endereco && <div className="muted mb">{dadosProximo.endereco}</div>}
 
-              {proximo.cliente?.lat != null && proximo.cliente?.lng != null ? (
+              {dadosProximo.lat != null && dadosProximo.lng != null ? (
                 <MapaNavegacao
-                  destino={{
-                    lat: proximo.cliente.lat,
-                    lng: proximo.cliente.lng,
-                    nome: proximo.cliente.razao_social || proximo.cliente.nome_fantasia,
-                  }}
+                  destino={{ lat: dadosProximo.lat, lng: dadosProximo.lng, nome: dadosProximo.nome }}
                 />
               ) : (
                 <>
                   <div className="muted mb">
-                    Este cliente ainda não tem localização salva — busque pelo endereço abaixo para ver o mapa.
+                    Ainda sem localização no mapa — busque pelo endereço abaixo para ver a rota.
                   </div>
                   <button
                     className="btn btn-outline mb"
@@ -207,7 +298,7 @@ export default function Roteiro() {
               )}
 
               <div className="row mt">
-                <a className="btn btn-azul grow" href={linkMaps(proximo.cliente)} target="_blank" rel="noreferrer">
+                <a className="btn btn-azul grow" href={linkMaps(dadosProximo)} target="_blank" rel="noreferrer">
                   🗺️ Navegar no Maps
                 </a>
                 <button className="btn btn-verde grow" onClick={() => cheguei(proximo)}>
@@ -223,8 +314,8 @@ export default function Roteiro() {
               {pendentes.slice(1).map((i) => (
                 <div key={i.id} className="list-item">
                   <div className="grow">
-                    <div className="title">{i.cliente?.razao_social || i.cliente?.nome_fantasia || 'Cliente'}</div>
-                    <div className="sub">{i.cliente?.municipio || ''}{i.cliente?.uf ? `/${i.cliente.uf}` : ''}</div>
+                    <div className="title">{dadosItem(i).nome}{dadosItem(i).avulso ? ' (avulso)' : ''}</div>
+                    <div className="sub">{dadosItem(i).sub}</div>
                   </div>
                   <button className="btn-ghost" onClick={() => mover(i, -1)} aria-label="Subir">↑</button>
                   <button className="btn-ghost" onClick={() => mover(i, 1)} aria-label="Descer">↓</button>
@@ -240,7 +331,7 @@ export default function Roteiro() {
               {feitos.map((i) => (
                 <div key={i.id} className="list-item" style={{ opacity: 0.6 }}>
                   <div className="grow">
-                    <div className="title">✓ {i.cliente?.razao_social || i.cliente?.nome_fantasia || 'Cliente'}</div>
+                    <div className="title">✓ {dadosItem(i).nome}</div>
                     <div className="sub">
                       {new Date(i.visitado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                     </div>

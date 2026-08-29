@@ -248,7 +248,11 @@ create table if not exists roteiro_itens (
   id uuid primary key default gen_random_uuid(),
   perfil_id uuid references perfis(id) on delete cascade,
   data date not null,
-  cliente_id uuid references clientes(id) on delete cascade,
+  cliente_id uuid references clientes(id) on delete cascade, -- nulo em endereço avulso
+  nome text,          -- endereço avulso: nome/descrição
+  endereco text,      -- endereço avulso: endereço escrito
+  lat double precision,
+  lng double precision,
   ordem int not null default 0,
   visitado_em timestamptz,
   criado_em timestamptz default now()
