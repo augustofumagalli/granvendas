@@ -360,10 +360,14 @@ async function main() {
     // ---------- CLIENTES ----------
     if (!tem('--so-produtos')) {
       console.log('Lendo clientes do SiSCom...')
+      // Os textos do SiSCom estão em WIN1252 num banco charset NONE; o duplo CAST
+      // faz o próprio Firebird converter para UTF8 — sem ele, acento vira "?".
+      const t = (campo, tam) =>
+        `CAST(CAST(${campo} AS VARCHAR(${tam}) CHARACTER SET WIN1252) AS VARCHAR(${tam * 2}) CHARACTER SET UTF8) AS ${campo}`
       const rows = await query(
         db,
-        `SELECT CODIGOCLIENTE, RAZAOSOCIAL, ABREVIA, CNPJCPF, EMAIL,
-                ENDERECOPOSTAL, NUMPOSTAL, BAIRROPOSTAL, CIDADEPOSTAL, UFPOSTAL, CEPPOSTAL,
+        `SELECT CODIGOCLIENTE, ${t('RAZAOSOCIAL', 80)}, ${t('ABREVIA', 20)}, CNPJCPF, ${t('EMAIL', 200)},
+                ${t('ENDERECOPOSTAL', 40)}, NUMPOSTAL, ${t('BAIRROPOSTAL', 30)}, ${t('CIDADEPOSTAL', 30)}, UFPOSTAL, CEPPOSTAL,
                 DDD_FONE, FONE, DDD_CELULAR, CELULAR
            FROM TCADCLIENTE
           WHERE CODEMPRESA = ? AND COALESCE(INATIVO, 0) = 0`,
@@ -409,7 +413,9 @@ async function main() {
       console.log('Lendo produtos do SiSCom...')
       const rows = await query(
         db,
-        `SELECT P.CODPRODUTO, P.DESCRICAO, P.UNIDADE, P.EMBALAGEM, P.INATIVO,
+        `SELECT P.CODPRODUTO,
+                CAST(CAST(P.DESCRICAO AS VARCHAR(90) CHARACTER SET WIN1252) AS VARCHAR(180) CHARACTER SET UTF8) AS DESCRICAO,
+                P.UNIDADE, P.EMBALAGEM, P.INATIVO,
                 S.SALDO_ESTOQUE
            FROM TCADPRODUTO P
            LEFT JOIN TBSALDOATUAL S ON S.CODEMPRESA = P.CODEMPRESA AND S.CODPRODUTO = P.CODPRODUTO
