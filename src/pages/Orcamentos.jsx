@@ -224,6 +224,8 @@ function ModalNovo({ user, perfil, clientes, condicoes, orcamentoExistente, reca
   const [qtd, setQtd] = useState(1)
   const [preco, setPreco] = useState(0)
   const [unidade, setUnidade] = useState('')
+  // preços de tabela por produto (para mostrar as referências em cada item)
+  const [refProdutos, setRefProdutos] = useState({})
 
   useEffect(() => {
     const padrao = curingaParaIlike(buscaProd)
@@ -265,6 +267,18 @@ function ModalNovo({ user, perfil, clientes, condicoes, orcamentoExistente, reca
           subtotal: Number(it.subtotal) || 0,
         })))
         setCarregandoItens(false)
+        // busca os preços de tabela dos produtos dos itens
+        const ids = [...new Set((data || []).map((it) => it.produto_id).filter(Boolean))]
+        if (ids.length) {
+          supabase
+            .from('produtos')
+            .select('id,preco,preco_vista,preco_prazo,margem_vista,margem_prazo,preco_revenda_vista,preco_revenda_prazo,margem_revenda_vista,margem_revenda_prazo')
+            .in('id', ids)
+            .then(({ data: ps }) => {
+              if (!vivo || !ps) return
+              setRefProdutos((m) => ({ ...m, ...Object.fromEntries(ps.map((p) => [p.id, p])) }))
+            })
+        }
       })
     return () => { vivo = false }
   }, [edicao, orcamentoExistente])
@@ -296,6 +310,7 @@ function ModalNovo({ user, perfil, clientes, condicoes, orcamentoExistente, reca
     setQtd(1)
     setBuscaProd('')
     setResultadosProd([])
+    setRefProdutos((m) => ({ ...m, [p.id]: p }))
   }
 
   function adicionarItem() {
@@ -518,36 +533,67 @@ function ModalNovo({ user, perfil, clientes, condicoes, orcamentoExistente, reca
       ) : itens.length === 0 ? (
         <div className="empty">Nenhum item adicionado.</div>
       ) : (
-        itens.map((it, i) => (
-          <div key={i} className="list-item">
-            <div className="grow">
-              <div className="title">{it.descricao}</div>
-              <div className="row mt" style={{ alignItems: 'center', gap: 6 }}>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={it.quantidade}
-                  onChange={(e) => atualizarItem(i, 'quantidade', e.target.value)}
-                  style={{ maxWidth: 74 }}
-                  aria-label="Quantidade"
-                />
-                <span className="muted">{it.unidade || 'x'} ×</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={it.preco_unit}
-                  onChange={(e) => atualizarItem(i, 'preco_unit', e.target.value)}
-                  style={{ maxWidth: 100 }}
-                  aria-label="Preço unitário"
-                />
-                <span className="mono">= {brl(it.subtotal)}</span>
+        itens.map((it, i) => {
+          const ref = refProdutos[it.produto_id]
+          const opcoes = ref
+            ? [
+                ['À vista', ref.preco_vista ?? ref.preco, ref.margem_vista],
+                ['A prazo', ref.preco_prazo, ref.margem_prazo],
+                ['Revenda', ref.preco_revenda_vista, ref.margem_revenda_vista],
+                ['Rev. prazo', ref.preco_revenda_prazo, ref.margem_revenda_prazo],
+              ].filter(([, v]) => v != null)
+            : []
+          const piso = ref?.preco_revenda_vista
+          const abaixoPiso = piso != null && Number(it.preco_unit) > 0 && Number(it.preco_unit) < Number(piso)
+          return (
+            <div key={i} className="list-item" style={{ alignItems: 'flex-start' }}>
+              <div className="grow">
+                <div className="title">{it.descricao}</div>
+                <div className="row mt" style={{ alignItems: 'center', gap: 6 }}>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={it.quantidade}
+                    onChange={(e) => atualizarItem(i, 'quantidade', e.target.value)}
+                    style={{ maxWidth: 74 }}
+                    aria-label="Quantidade"
+                  />
+                  <span className="muted">{it.unidade || 'x'} ×</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={it.preco_unit}
+                    onChange={(e) => atualizarItem(i, 'preco_unit', e.target.value)}
+                    style={{ maxWidth: 100, borderColor: abaixoPiso ? '#c0392b' : undefined }}
+                    aria-label="Preço unitário"
+                  />
+                  <span className="mono">= {brl(it.subtotal)}</span>
+                </div>
+                {opcoes.length > 0 && (
+                  <div className="row mt" style={{ flexWrap: 'wrap', gap: 6 }}>
+                    {opcoes.map(([rotulo, valor, margem]) => (
+                      <button
+                        key={rotulo}
+                        type="button"
+                        className={'badge ' + (Number(it.preco_unit) === Number(valor) ? 'badge-azul' : 'badge-cinza')}
+                        style={{ cursor: 'pointer', border: 'none' }}
+                        onClick={() => atualizarItem(i, 'preco_unit', Number(valor))}
+                      >
+                        {rotulo} {brl(valor)}{margem != null ? ` · MG ${numero(margem, 1)}%` : ''}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {abaixoPiso && (
+                  <div className="badge badge-erro mt">⚠ Abaixo do piso Revenda ({brl(piso)})</div>
+                )}
               </div>
+              <button className="btn-ghost" onClick={() => removerItem(i)} aria-label="Remover">✕</button>
             </div>
-            <button className="btn-ghost" onClick={() => removerItem(i)} aria-label="Remover">✕</button>
-          </div>
-        ))
+          )
+        })
       )}
 
       <div className="between mt mb">

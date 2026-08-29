@@ -380,8 +380,9 @@ export default function Roteiro() {
           {navegando && proximo && dadosProximo?.lat != null && dadosProximo?.lng != null && (
             <div
               style={{
-                position: 'fixed', inset: 0, zIndex: 2000, background: '#fff',
-                display: 'flex', flexDirection: 'column', padding: 10,
+                position: 'fixed', inset: 0, zIndex: 2000, background: '#f2f4f7',
+                display: 'flex', flexDirection: 'column',
+                padding: 'calc(env(safe-area-inset-top, 0px) + 12px) 12px calc(env(safe-area-inset-bottom, 0px) + 12px)',
               }}
             >
               <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -393,11 +394,16 @@ export default function Roteiro() {
               <div className="row mt">
                 <button
                   className="btn btn-verde grow"
+                  style={{ padding: '14px 16px', fontSize: 16 }}
                   onClick={() => { setNavegando(false); cheguei(proximo) }}
                 >
                   🤝 Cheguei
                 </button>
-                <button className="btn btn-outline" onClick={() => setNavegando(false)}>
+                <button
+                  className="btn btn-outline"
+                  style={{ padding: '14px 18px', fontSize: 16 }}
+                  onClick={() => setNavegando(false)}
+                >
                   Sair
                 </button>
               </div>

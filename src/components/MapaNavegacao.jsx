@@ -189,31 +189,70 @@ export default function MapaNavegacao({ destino, navegando = false, altura = 320
     return () => { vivo = false }
   }, [pos, destino, navegando])
 
-  return (
-    <div style={navegando ? { display: 'flex', flexDirection: 'column', height: '100%' } : undefined}>
-      {navegando && instrucao && (
+  if (navegando) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 10 }}>
+        {/* cabeçalho: destino + distância/tempo */}
         <div
           style={{
-            background: '#173D5C', color: '#fff', padding: '12px 14px', borderRadius: 12,
-            marginBottom: 8, fontSize: 17, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 10,
+            background: '#173D5C', color: '#fff', borderRadius: 14, padding: '10px 14px',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
           }}
         >
-          <span style={{ fontSize: 26 }}>{instrucao.seta}</span>
-          <span>
-            {instrucao.metros > 30 ? `Em ${instrucao.metros >= 1000 ? numero(instrucao.metros / 1000, 1) + ' km' : instrucao.metros + ' m'}: ` : ''}
-            {instrucao.texto}
-          </span>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 11, opacity: 0.75, textTransform: 'uppercase', letterSpacing: 0.5 }}>Indo para</div>
+            <div style={{ fontWeight: 700, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {destino.nome || 'Destino'}
+            </div>
+          </div>
+          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+            {info ? (
+              <>
+                <div style={{ fontWeight: 700, fontSize: 16 }} className="mono">{numero(info.km, 1)} km</div>
+                <div style={{ fontSize: 12, opacity: 0.85 }}>{info.minutos != null ? `~${numero(info.minutos)} min` : 'linha reta'}</div>
+              </>
+            ) : (
+              <div style={{ fontSize: 12, opacity: 0.85 }}>{pos ? 'calculando…' : 'obtendo GPS…'}</div>
+            )}
+          </div>
         </div>
-      )}
+
+        {/* próxima instrução */}
+        {instrucao && (
+          <div
+            style={{
+              background: '#fff', border: '2px solid #F58220', borderRadius: 14, padding: '12px 14px',
+              display: 'flex', alignItems: 'center', gap: 12, boxShadow: '0 2px 8px rgba(0,0,0,.08)',
+            }}
+          >
+            <span style={{ fontSize: 30, lineHeight: 1 }}>{instrucao.seta}</span>
+            <div style={{ minWidth: 0 }}>
+              {instrucao.metros > 30 && (
+                <div style={{ fontSize: 13, color: '#F58220', fontWeight: 700 }}>
+                  Em {instrucao.metros >= 1000 ? numero(instrucao.metros / 1000, 1) + ' km' : instrucao.metros + ' m'}
+                </div>
+              )}
+              <div style={{ fontWeight: 700, fontSize: 16, color: '#173D5C' }}>{instrucao.texto}</div>
+            </div>
+          </div>
+        )}
+
+        <div ref={el} style={{ width: '100%', flex: 1, minHeight: 160, borderRadius: 14, overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,.08)' }} />
+      </div>
+    )
+  }
+
+  return (
+    <div>
       <div className="between mb">
-        <span className="muted">{pos ? (navegando ? destino.nome || 'Destino' : 'Sua posição ao vivo no mapa') : 'Obtendo sua localização…'}</span>
+        <span className="muted">{pos ? 'Sua posição ao vivo no mapa' : 'Obtendo sua localização…'}</span>
         {info && (
           <span className="mono">
             {numero(info.km, 1)} km{info.minutos != null ? ` · ~${numero(info.minutos)} min` : ''}{info.erro ? ' (linha reta)' : ''}
           </span>
         )}
       </div>
-      <div ref={el} style={{ width: '100%', height: navegando ? '100%' : altura, minHeight: navegando ? 200 : undefined, flex: navegando ? 1 : undefined, borderRadius: 12, overflow: 'hidden' }} />
+      <div ref={el} style={{ width: '100%', height: altura, borderRadius: 12, overflow: 'hidden' }} />
     </div>
   )
 }
