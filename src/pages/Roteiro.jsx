@@ -205,6 +205,21 @@ export default function Roteiro() {
 
   const proximo = itens.find((i) => !i.visitado_em)
   const dadosProximo = proximo ? dadosItem(proximo) : null
+
+  // navegação em tela cheia dentro do app (o GranVendas não sai da frente)
+  const [navegando, setNavegando] = useState(false)
+
+  // mantém a tela acesa durante a navegação, mesmo com a plataforma desligada
+  useEffect(() => {
+    if (!navegando) return
+    let trava = null
+    ;(async () => {
+      try {
+        if ('wakeLock' in navigator) trava = await navigator.wakeLock.request('screen')
+      } catch { /* segue sem a trava */ }
+    })()
+    return () => { try { trava?.release?.() } catch { /* ignore */ } }
+  }, [navegando])
   const pendentes = itens.filter((i) => !i.visitado_em)
   const feitos = itens.filter((i) => i.visitado_em)
 
@@ -320,8 +335,13 @@ export default function Roteiro() {
               )}
 
               <div className="row mt">
-                <a className="btn btn-azul grow" href={linkMaps(dadosProximo)} target="_blank" rel="noreferrer">
-                  🗺️ Navegar no Maps
+                {dadosProximo.lat != null && dadosProximo.lng != null && (
+                  <button className="btn btn-azul grow" onClick={() => setNavegando(true)}>
+                    🧭 Navegar no app
+                  </button>
+                )}
+                <a className="btn btn-outline grow" href={linkMaps(dadosProximo)} target="_blank" rel="noreferrer">
+                  🗺️ Maps (voz)
                 </a>
                 <button className="btn btn-verde grow" onClick={() => cheguei(proximo)}>
                   🤝 Cheguei
@@ -356,6 +376,33 @@ export default function Roteiro() {
               🗑 Limpar roteiro do dia
             </button>
           </div>
+
+          {navegando && proximo && dadosProximo?.lat != null && dadosProximo?.lng != null && (
+            <div
+              style={{
+                position: 'fixed', inset: 0, zIndex: 2000, background: '#fff',
+                display: 'flex', flexDirection: 'column', padding: 10,
+              }}
+            >
+              <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                <MapaNavegacao
+                  navegando
+                  destino={{ lat: dadosProximo.lat, lng: dadosProximo.lng, nome: dadosProximo.nome }}
+                />
+              </div>
+              <div className="row mt">
+                <button
+                  className="btn btn-verde grow"
+                  onClick={() => { setNavegando(false); cheguei(proximo) }}
+                >
+                  🤝 Cheguei
+                </button>
+                <button className="btn btn-outline" onClick={() => setNavegando(false)}>
+                  Sair
+                </button>
+              </div>
+            </div>
+          )}
 
           {feitos.length > 0 && (
             <>
