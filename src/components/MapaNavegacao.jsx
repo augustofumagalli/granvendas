@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { distanciaKm } from '../lib/geo'
+import { distanciaKm, rumoGraus } from '../lib/geo'
 import { numero } from '../lib/format'
 
 /*
@@ -87,10 +87,22 @@ export default function MapaNavegacao({ destino, navegando = false, altura = 320
   const [pos, setPos] = useState(null)
   const [instrucao, setInstrucao] = useState(null) // { seta, texto, metros }
 
+  // rotação do mapa: o sentido do carro fica para cima (como um GPS de verdade)
+  const rumoRef = useRef(0)          // rumo atual 0-360
+  const posRumoRef = useRef(null)    // última posição usada para calcular o rumo
+  const [rotacao, setRotacao] = useState(0) // graus acumulados (gira sempre pelo caminho mais curto)
+
+  function aplicarRumo(novo) {
+    let delta = ((novo - rumoRef.current + 540) % 360) - 180 // menor giro
+    if (Math.abs(delta) < 5) return // ignora tremidas pequenas
+    rumoRef.current = (rumoRef.current + delta + 360) % 360
+    setRotacao((r) => r + delta)
+  }
+
   // mapa base + destino
   useEffect(() => {
     if (!el.current) return
-    const map = L.map(el.current, { attributionControl: !navegando })
+    const map = L.map(el.current, { attributionControl: !navegando, zoomControl: !navegando })
     mapaRef.current = map
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map)
     L.circleMarker([destino.lat, destino.lng], { radius: 9, weight: 2, color: '#fff', fillColor: '#F58220', fillOpacity: 1 })
@@ -109,7 +121,12 @@ export default function MapaNavegacao({ destino, navegando = false, altura = 320
   useEffect(() => {
     if (!navigator.geolocation) return
     const id = navigator.geolocation.watchPosition(
-      (p) => setPos({ lat: p.coords.latitude, lng: p.coords.longitude }),
+      (p) =>
+        setPos({
+          lat: p.coords.latitude,
+          lng: p.coords.longitude,
+          rumo: Number.isFinite(p.coords.heading) ? p.coords.heading : null,
+        }),
       () => {},
       { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 }
     )
@@ -127,10 +144,22 @@ export default function MapaNavegacao({ destino, navegando = false, altura = 320
       marcadorRef.current.setLatLng([pos.lat, pos.lng])
     }
 
-    // navegando: o mapa acompanha o carro
+    // navegando: o mapa acompanha o carro e gira para o sentido da direção
     if (navegando) {
       map.setView([pos.lat, pos.lng], seguiuRef.current ? map.getZoom() : 17, { animate: true })
       seguiuRef.current = true
+
+      if (pos.rumo != null) {
+        aplicarRumo(pos.rumo) // rumo informado pelo próprio GPS do celular
+      } else {
+        const ant = posRumoRef.current
+        if (!ant) {
+          posRumoRef.current = pos
+        } else if (distanciaKm(ant.lat, ant.lng, pos.lat, pos.lng) > 0.012) {
+          aplicarRumo(rumoGraus(ant.lat, ant.lng, pos.lat, pos.lng))
+          posRumoRef.current = pos
+        }
+      }
     }
 
     // instrução atual: avança quando o carro passa pelo ponto da manobra
@@ -237,7 +266,36 @@ export default function MapaNavegacao({ destino, navegando = false, altura = 320
           </div>
         )}
 
-        <div ref={el} style={{ width: '100%', flex: 1, minHeight: 160, borderRadius: 14, overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,.08)' }} />
+        {/* o mapa gira para o sentido do carro ficar sempre para cima; o quadro
+            interno é maior que a janela para os cantos não aparecerem no giro */}
+        <div
+          style={{
+            flex: 1, minHeight: 160, borderRadius: 14, overflow: 'hidden',
+            position: 'relative', boxShadow: '0 2px 8px rgba(0,0,0,.08)',
+          }}
+        >
+          <div
+            ref={el}
+            style={{
+              position: 'absolute', left: '-25%', top: '-25%', width: '150%', height: '150%',
+              transform: `rotate(${-rotacao}deg)`,
+              transformOrigin: 'center center',
+              transition: 'transform .6s ease',
+            }}
+          />
+          {/* bússola: aponta o norte */}
+          <div
+            style={{
+              position: 'absolute', top: 10, right: 10, width: 40, height: 40, borderRadius: '50%',
+              background: 'rgba(255,255,255,.92)', boxShadow: '0 1px 5px rgba(0,0,0,.25)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              transform: `rotate(${-rotacao}deg)`, transition: 'transform .6s ease',
+              fontWeight: 800, color: '#c0392b', fontSize: 14, zIndex: 500,
+            }}
+          >
+            ▲<span style={{ color: '#173D5C', marginLeft: 1 }}>N</span>
+          </div>
+        </div>
       </div>
     )
   }

@@ -9,6 +9,16 @@ export function distanciaKm(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
+// Rumo (bearing) em graus do ponto 1 para o ponto 2 (0 = norte, 90 = leste)
+export function rumoGraus(lat1, lon1, lat2, lon2) {
+  const f1 = (lat1 * Math.PI) / 180
+  const f2 = (lat2 * Math.PI) / 180
+  const dl = ((lon2 - lon1) * Math.PI) / 180
+  const y = Math.sin(dl) * Math.cos(f2)
+  const x = Math.cos(f1) * Math.sin(f2) - Math.sin(f1) * Math.cos(f2) * Math.cos(dl)
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360
+}
+
 // Geocodificação: endereço escrito -> coordenadas (Nominatim/OpenStreetMap)
 export async function buscarCoordenadas(texto) {
   const url =
