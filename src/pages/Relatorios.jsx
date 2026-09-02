@@ -107,8 +107,13 @@ function diaSemana(dia) {
 }
 
 export default function Relatorios() {
-  const { user } = useAuth()
+  const { user, perfil } = useAuth()
   const toast = useToast()
+
+  const ehGestor = perfil?.papel === 'gestor'
+  const [vendedores, setVendedores] = useState([])
+  const [vendedorId, setVendedorId] = useState('') // '' = eu mesmo
+  const alvoId = vendedorId || user?.id
 
   const [periodo, setPeriodo] = useState('semana')
   const [loading, setLoading] = useState(true)
@@ -126,6 +131,16 @@ export default function Relatorios() {
 
   const { inicioDia, fimDia } = useMemo(() => calcularPeriodo(periodo), [periodo])
 
+  useEffect(() => {
+    if (!ehGestor) return
+    supabase
+      .from('perfis')
+      .select('id, nome')
+      .neq('id', user.id)
+      .order('nome', { ascending: true })
+      .then(({ data }) => setVendedores(data || []))
+  }, [ehGestor, user])
+
   async function abrirRota(dia) {
     setRotaDia(dia)
     setCarregandoRota(true)
@@ -136,18 +151,18 @@ export default function Relatorios() {
       supabase
         .from('rota_pontos')
         .select('lat, lng, capturado_em')
-        .eq('perfil_id', user.id)
+        .eq('perfil_id', alvoId)
         .eq('data', dia)
         .order('capturado_em', { ascending: true }),
       supabase
         .from('visitas')
         .select('lat, lng, cliente_nome, criado_em')
-        .eq('perfil_id', user.id)
+        .eq('perfil_id', alvoId)
         .eq('data', dia),
       supabase
         .from('rota_pausas')
         .select('tipo, inicio, fim')
-        .eq('perfil_id', user.id)
+        .eq('perfil_id', alvoId)
         .eq('data', dia)
         .order('inicio', { ascending: true }),
       supabase
@@ -205,27 +220,27 @@ export default function Relatorios() {
         supabase
           .from('visitas')
           .select('id, data')
-          .eq('perfil_id', user.id)
+          .eq('perfil_id', alvoId)
           .gte('data', inicioStr)
           .lte('data', fimStr),
         supabase
           .from('orcamentos')
           .select('id, total, enviado_em')
-          .eq('perfil_id', user.id)
+          .eq('perfil_id', alvoId)
           .in('status', ['enviado', 'fechado'])
           .gte('enviado_em', inicioISO)
           .lt('enviado_em', fimExclISO),
         supabase
           .from('orcamentos')
           .select('id, total, fechado_em')
-          .eq('perfil_id', user.id)
+          .eq('perfil_id', alvoId)
           .eq('status', 'fechado')
           .gte('fechado_em', inicioISO)
           .lt('fechado_em', fimExclISO),
         supabase
           .from('rotas')
           .select('km, data')
-          .eq('perfil_id', user.id)
+          .eq('perfil_id', alvoId)
           .gte('data', inicioStr)
           .lte('data', fimStr),
       ])
@@ -240,7 +255,7 @@ export default function Relatorios() {
       setLoading(false)
     }
     carregar()
-  }, [user, inicioDia, fimDia])
+  }, [user, alvoId, inicioDia, fimDia])
 
   const totalVisitas = visitas.length
   const totalEnviados = enviados.length
@@ -283,6 +298,21 @@ export default function Relatorios() {
   return (
     <div>
       <div className="section-title mb">Relatórios</div>
+
+      {ehGestor && (
+        <div className="field mb">
+          <label>Vendedor</label>
+          <select
+            value={vendedorId}
+            onChange={(e) => { setVendedorId(e.target.value); setRotaDia(null) }}
+          >
+            <option value="">Eu ({perfil?.nome || 'gestor'})</option>
+            {vendedores.map((v) => (
+              <option key={v.id} value={v.id}>{v.nome}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div className="row mb">
         {CHIPS.map((c) => (
@@ -377,7 +407,10 @@ export default function Relatorios() {
       )}
 
       {rotaDia && (
-        <Modal titulo={`Rota de ${fmtData(rotaDia)}`} onClose={() => setRotaDia(null)}>
+        <Modal
+          titulo={`Rota de ${fmtData(rotaDia)}${vendedorId ? ` · ${vendedores.find((v) => v.id === vendedorId)?.nome || ''}` : ''}`}
+          onClose={() => setRotaDia(null)}
+        >
           {carregandoRota ? (
             <div className="center"><div className="spin" /></div>
           ) : pontosDia.length === 0 && visitasDia.length === 0 ? (

@@ -228,6 +228,9 @@ create policy "visitas_edita_dono_ou_gestor" on visitas for update
 create policy "visitas_exclui_gestor" on visitas for delete using (public.is_gestor());
 create policy "rotas_proprio" on rotas for all using (auth.uid() = perfil_id) with check (auth.uid() = perfil_id);
 create policy "rota_pontos_proprio" on rota_pontos for all using (auth.uid() = perfil_id) with check (auth.uid() = perfil_id);
+-- Gestor pode ler rotas e pontos de trajeto de todos os vendedores
+create policy "rotas_le_gestor" on rotas for select using (public.is_gestor());
+create policy "rota_pontos_le_gestor" on rota_pontos for select using (public.is_gestor());
 
 -- Pausas do expediente (visita/almoço/particular): KM não conta durante a pausa
 create table if not exists rota_pausas (
