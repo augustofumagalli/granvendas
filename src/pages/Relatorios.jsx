@@ -129,7 +129,19 @@ export default function Relatorios() {
   const [visitasDia, setVisitasDia] = useState([])
   const [paradasDia, setParadasDia] = useState([])
 
-  const { inicioDia, fimDia } = useMemo(() => calcularPeriodo(periodo), [periodo])
+  // Recarrega ao voltar para o app/aba (o vendedor pode ter registrado visitas nesse meio-tempo)
+  const [atualizacao, setAtualizacao] = useState(0)
+  useEffect(() => {
+    const aoVoltar = () => { if (document.visibilityState === 'visible') setAtualizacao((x) => x + 1) }
+    document.addEventListener('visibilitychange', aoVoltar)
+    window.addEventListener('focus', aoVoltar)
+    return () => {
+      document.removeEventListener('visibilitychange', aoVoltar)
+      window.removeEventListener('focus', aoVoltar)
+    }
+  }, [])
+
+  const { inicioDia, fimDia } = useMemo(() => calcularPeriodo(periodo), [periodo, atualizacao])
 
   useEffect(() => {
     if (!ehGestor) return
@@ -156,9 +168,10 @@ export default function Relatorios() {
         .order('capturado_em', { ascending: true }),
       supabase
         .from('visitas')
-        .select('lat, lng, cliente_nome, criado_em')
+        .select('id, lat, lng, cliente_nome, criado_em, foto_url, observacao')
         .eq('perfil_id', alvoId)
-        .eq('data', dia),
+        .eq('data', dia)
+        .order('criado_em', { ascending: true }),
       supabase
         .from('rota_pausas')
         .select('tipo, inicio, fim')
@@ -198,7 +211,7 @@ export default function Relatorios() {
     paradas.sort((a, b) => a.inicio - b.inicio)
 
     setPontosDia(pontos)
-    setVisitasDia(visitas.filter((v) => v.lat != null && v.lng != null))
+    setVisitasDia(visitas) // todas: o mapa ignora as sem GPS, mas a lista/contagem mostra tudo
     setParadasDia(paradas)
     setCarregandoRota(false)
   }
@@ -421,8 +434,38 @@ export default function Relatorios() {
               <div className="muted mt">
                 {pontosDia.length > 0 ? `${numero(pontosDia.length)} pontos de trajeto` : 'Sem trajeto registrado'}
                 {' · '}
-                {numero(visitasDia.length)} visita(s) no mapa
+                {numero(visitasDia.length)} visita(s)
+                {visitasDia.some((v) => v.lat == null) &&
+                  ` (${numero(visitasDia.filter((v) => v.lat != null).length)} no mapa — as demais sem GPS)`}
               </div>
+
+              {visitasDia.length > 0 && (
+                <>
+                  <div className="section-title mt">Visitas do dia ({numero(visitasDia.length)})</div>
+                  {visitasDia.map((v) => (
+                    <div key={v.id} className="list-item">
+                      {v.foto_url && (
+                        <a href={v.foto_url} target="_blank" rel="noreferrer">
+                          <img
+                            src={v.foto_url}
+                            alt={`Foto da visita a ${v.cliente_nome || 'cliente'}`}
+                            style={{ width: 56, height: 56, borderRadius: 8, objectFit: 'cover' }}
+                          />
+                        </a>
+                      )}
+                      <div className="grow">
+                        <div className="title">{v.cliente_nome || 'Cliente'}</div>
+                        <div className="sub">
+                          {hm(v.criado_em)}
+                          {v.lat == null ? ' · sem GPS' : ''}
+                          {v.observacao ? ' · ' + v.observacao.slice(0, 60) : ''}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="muted" style={{ fontSize: 12 }}>Toque na foto para ampliar.</div>
+                </>
+              )}
 
               {paradasDia.length > 0 && (
                 <>

@@ -141,3 +141,7 @@ input, select, textarea, button { font-family: inherit; font-size: 16px; }
 .login-logo { display: block; height: 46px; margin: 0 auto 6px; }
 .spin { width: 34px; height: 34px; border: 3px solid var(--border); border-top-color: var(--laranja); border-radius: 50%; animation: r 0.7s linear infinite; margin: 30px auto; }
 @keyframes r { to { transform: rotate(360deg); } }
+
+/* número da visita sobre o marcador no mapa da rota */
+.rota-num { background: transparent; border: none; box-shadow: none; color: #fff; font-weight: 700; font-size: 11px; }
+.rota-num::before { display: none; }

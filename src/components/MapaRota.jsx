@@ -87,11 +87,18 @@ export default function MapaRota({ pontos = [], visitas = [], paradas = [] }) {
       limites.push([p.lat, p.lng])
     })
 
-    ;(visitas || []).forEach((v) => {
+    ;(visitas || []).forEach((v, i) => {
       if (v.lat == null || v.lng == null) return
-      L.circleMarker([v.lat, v.lng], { radius: 8, weight: 2, color: '#fff', fillColor: '#F58220', fillOpacity: 1 })
+      const hora = v.criado_em
+        ? new Date(v.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+        : ''
+      // numera na ordem do dia: visitas no mesmo lugar se sobrepõem e o número mostra que há mais de uma
+      L.circleMarker([v.lat, v.lng], { radius: 9, weight: 2, color: '#fff', fillColor: '#F58220', fillOpacity: 1 })
         .addTo(map)
-        .bindPopup(v.cliente_nome || 'Visita')
+        .bindTooltip(String(i + 1), {
+          permanent: true, direction: 'center', className: 'rota-num',
+        })
+        .bindPopup(`${i + 1}. ${v.cliente_nome || 'Visita'}${hora ? ` · ${hora}` : ''}`)
       limites.push([v.lat, v.lng])
     })
 
