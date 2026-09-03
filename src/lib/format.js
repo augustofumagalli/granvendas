@@ -4,12 +4,23 @@ export const brl = (n) =>
 export const numero = (n, d = 0) =>
   (Number(n) || 0).toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d })
 
-export const data = (d) => (d ? new Date(d).toLocaleDateString('pt-BR') : '—')
+// Data 'YYYY-MM-DD' é interpretada no fuso local (new Date() puro trata como UTC
+// e no Brasil mostraria o dia anterior)
+export const data = (d) => {
+  if (!d) return '—'
+  const s = String(d)
+  const dt = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + 'T12:00:00') : new Date(d)
+  return dt.toLocaleDateString('pt-BR')
+}
 
 export const dataHora = (d) =>
   d ? new Date(d).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'
 
-export const hoje = () => new Date().toISOString().slice(0, 10)
+// Dia de hoje no fuso local (toISOString é UTC: depois das 21h no Brasil já virava o dia seguinte)
+export const hoje = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 export const soDigitos = (s) => String(s || '').replace(/\D/g, '')
 
