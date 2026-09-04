@@ -224,6 +224,9 @@ export default function Configuracoes() {
             <button className="btn btn-azul grow" onClick={() => navigate('/equipe')}>
               + Cadastrar vendedor
             </button>
+            <button className="btn btn-outline grow" onClick={() => navigate('/acompanhamento')}>
+              📍 Acompanhar visitas
+            </button>
           </div>
         </div>
       )}

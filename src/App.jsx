@@ -11,6 +11,7 @@ import Roteiro from './pages/Roteiro'
 import Relatorios from './pages/Relatorios'
 import Configuracoes from './pages/Configuracoes'
 import Equipe from './pages/Equipe'
+import Acompanhamento from './pages/Acompanhamento'
 
 function Protegida({ children }) {
   const { session, carregando } = useAuth()
@@ -33,6 +34,7 @@ export default function App() {
       <Route path="/relatorios" element={<Protegida><Relatorios /></Protegida>} />
       <Route path="/configuracoes" element={<Protegida><Configuracoes /></Protegida>} />
       <Route path="/equipe" element={<Protegida><Equipe /></Protegida>} />
+      <Route path="/acompanhamento" element={<Protegida><Acompanhamento /></Protegida>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

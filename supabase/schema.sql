@@ -264,6 +264,12 @@ alter table roteiro_itens enable row level security;
 create policy "roteiro_le_dono_ou_gestor" on roteiro_itens for select using (auth.uid() = perfil_id or public.is_gestor());
 create policy "roteiro_escreve_proprio" on roteiro_itens for all using (auth.uid() = perfil_id) with check (auth.uid() = perfil_id);
 
+-- Gestor pode LER (acompanhamento) visitas/rotas/pontos/orçamentos de todos os vendedores
+create policy "orc_gestor_le" on orcamentos for select using (public.is_gestor());
+create policy "visitas_gestor_le" on visitas for select using (public.is_gestor());
+create policy "rotas_gestor_le" on rotas for select using (public.is_gestor());
+create policy "rota_pontos_gestor_le" on rota_pontos for select using (public.is_gestor());
+
 -- =====================================================================
 -- STORAGE: bucket para fotos das visitas
 -- =====================================================================
