@@ -3,7 +3,10 @@ import { supabase } from '../lib/supabase'
 import { useToast } from '../context/ToastContext'
 import Modal from '../components/Modal'
 import MapaRota from '../components/MapaRota'
+import { detectarParadas, classificarParada } from '../lib/paradas'
 import { brl, numero, data as fmtData, dataHora } from '../lib/format'
+
+const hm = (t) => new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 
 // YYYY-MM-DD no horário local
 function diaLocal(d) {
@@ -58,6 +61,7 @@ export default function Acompanhamento() {
   const [carregandoRota, setCarregandoRota] = useState(false)
   const [pontosDia, setPontosDia] = useState([])
   const [visitasDia, setVisitasDia] = useState([])
+  const [paradasDia, setParadasDia] = useState([])
 
   const { inicioDia, fimDia } = useMemo(() => calcularPeriodo(periodo), [periodo])
 
@@ -128,15 +132,24 @@ export default function Acompanhamento() {
   async function abrirRota(dia) {
     setRotaDia(dia)
     setCarregandoRota(true)
-    setPontosDia([]); setVisitasDia([])
-    const [rPontos, rVisitas] = await Promise.all([
+    setPontosDia([]); setVisitasDia([]); setParadasDia([])
+    const [rPontos, rVisitas, rPausas, rClientes] = await Promise.all([
       supabase.from('rota_pontos').select('lat, lng, capturado_em')
         .eq('perfil_id', vendedorId).eq('data', dia).order('capturado_em', { ascending: true }),
-      supabase.from('visitas').select('lat, lng, cliente_nome').eq('perfil_id', vendedorId).eq('data', dia),
+      supabase.from('visitas').select('lat, lng, cliente_nome, criado_em')
+        .eq('perfil_id', vendedorId).eq('data', dia).order('criado_em', { ascending: true }),
+      supabase.from('rota_pausas').select('tipo, inicio, fim')
+        .eq('perfil_id', vendedorId).eq('data', dia),
+      supabase.from('clientes').select('razao_social, nome_fantasia, lat, lng').not('lat', 'is', null),
     ])
     if (rPontos.error || rVisitas.error) toast('Erro ao carregar a rota')
-    setPontosDia(rPontos.data || [])
-    setVisitasDia((rVisitas.data || []).filter((v) => v.lat != null && v.lng != null))
+    const pontos = rPontos.data || []
+    const visitasDoDia = rVisitas.data || []
+    const paradas = detectarParadas(pontos)
+      .map((p) => ({ ...p, ...classificarParada(p, visitasDoDia, rPausas.data || [], rClientes.data || []) }))
+    setPontosDia(pontos)
+    setVisitasDia(visitasDoDia.filter((v) => v.lat != null && v.lng != null))
+    setParadasDia(paradas)
     setCarregandoRota(false)
   }
 
@@ -246,11 +259,26 @@ export default function Acompanhamento() {
             <div className="empty">Sem trajeto ou visitas com localização neste dia.</div>
           ) : (
             <>
-              <MapaRota pontos={pontosDia} visitas={visitasDia} />
+              <MapaRota pontos={pontosDia} visitas={visitasDia} paradas={paradasDia.filter((p) => p.lat != null)} />
               <div className="muted mt">
                 {pontosDia.length > 0 ? `${numero(pontosDia.length)} pontos de trajeto` : 'Sem trajeto registrado'}
                 {' · '}{numero(visitasDia.length)} visita(s) no mapa
               </div>
+              {paradasDia.length > 0 && (
+                <>
+                  <div className="section-title mt">Linha do tempo das paradas</div>
+                  {paradasDia.map((p, i) => (
+                    <div key={i} className="list-item">
+                      <div className="grow">
+                        <div className="title">{p.rotulo}</div>
+                        <div className="sub">
+                          {hm(p.inicio)}–{hm(p.fim)}{p.minutos != null ? ` · ${numero(p.minutos)} min` : ''}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
             </>
           )}
         </Modal>
